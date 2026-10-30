@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -344,6 +345,7 @@ func TestLiveWindowRoundTrip(t *testing.T) {
 	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "w0", "-x", "160", "-y", "48")
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "w1")
 	tmuxRun(t, tm, "split-window", "-h", "-d", "-t", "a:w1")
+	tmuxRun(t, tm, "split-window", "-v", "-d", "-t", "a:w1.1") // three panes, to test their order
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "w2")
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a") // named automatically
 	before := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_index} #{window_name} #{window_panes} #{window_layout}")
@@ -364,13 +366,12 @@ func TestLiveWindowRoundTrip(t *testing.T) {
 		t.Errorf("the overview's layout should apply: %s", m.status)
 	}
 	got := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_id} #{window_name} #{window_panes}")
-	if f := strings.Fields(got); len(f) != 3 || f[1] != "overview" || f[2] != "5" {
+	if f := strings.Fields(got); len(f) != 3 || f[1] != "overview" || f[2] != "6" {
 		t.Fatalf("after joining: %q", got)
 	}
 	live := strings.Fields(got)[0]
 
-	// Four windows in a 2x2 overview: four parts of about a quarter each,
-	// w1's two panes side by side in its part.
+	// Four windows in a 2x2 overview: two rows of two.
 	layout, _ := tmux.ParseLayout(tmuxRun(t, tm, "display-message", "-p", "-t", live, "#{window_layout}"))
 	if layout.SideBySide || len(layout.Children) != 2 || !layout.Children[0].SideBySide {
 		t.Errorf("layout = %s", layout)
@@ -392,5 +393,36 @@ func TestLiveWindowRoundTrip(t *testing.T) {
 	}
 	if split, _ := splitLiveWindow(tm, live); split {
 		t.Error("an ordinary window is not split")
+	}
+}
+
+// TestLiveWindowKeepsPlaces checks that each window's pane lands where the
+// overview drew that window: the centred one in the middle.
+func TestLiveWindowKeepsPlaces(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "w0", "-x", "200", "-y", "60")
+	for i := 1; i < 13; i++ {
+		tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", fmt.Sprint("w", i))
+	}
+	tmuxRun(t, tm, "split-window", "-h", "-d", "-t", "a:w2")
+	centre := tmuxRun(t, tm, "display-message", "-p", "-t", "a:w5", "#{pane_id}")
+	m := liveModel(t, tm)
+	m.selectRow(t, "w5")
+	m.handle(event{key: keyOverview}) // centred on w5
+	m.render(200, 62)
+	m.handle(typed('w'))
+	if done, _, err := m.handle(typed('y')); !done || err != nil || m.status != "" {
+		t.Fatalf("makeLiveWindow: %v %v %q", done, err, m.status)
+	}
+	geometry := tmuxRun(t, tm, "display-message", "-p", "-t", centre, "#{pane_left} #{pane_top} #{pane_width} #{pane_height}")
+	var left, top, width, height int
+	fmt.Sscan(geometry, &left, &top, &width, &height)
+	if left < 40 || left > 60 || top < 10 || top > 20 || width < 90 || height < 25 {
+		t.Errorf("w5's pane is at %s, want about 50 15 100 30 (the middle half)", geometry)
+	}
+	// Every pane of the overview's top left window is at the top left.
+	w0 := tmuxRun(t, tm, "list-panes", "-t", "a:overview", "-F", "#{pane_id} #{pane_left} #{pane_top}")
+	if !strings.Contains(w0, " 0 0") {
+		t.Errorf("no pane at the top left: %s", w0)
 	}
 }

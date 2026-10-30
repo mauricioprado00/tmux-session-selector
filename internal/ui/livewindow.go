@@ -221,7 +221,7 @@ func (m *model) makeLiveWindow() (done bool, target *tmux.Target, err error) {
 		m.status = "kept a tiled layout: the overview's arrangement has no tmux equivalent"
 	} else if l, err := tree.place(0, 0, host.Width, host.Height); err != nil {
 		m.status = "kept a tiled layout: " + err.Error()
-	} else if _, err := tm.Run("select-layout", "-t", host.ID, l.String()); err != nil {
+	} else if err := tm.ApplyLayout(host.ID, l); err != nil {
 		m.status = "kept a tiled layout: " + err.Error()
 	}
 	tm.Run("rename-window", "-t", host.ID, "overview")
@@ -309,7 +309,9 @@ func splitLiveWindow(tm tmux.Tmux, window string) (bool, error) {
 // restoreWindow gives window w's layout (if its panes are all there still),
 // active pane, name and automatic renaming back.
 func restoreWindow(tm tmux.Tmux, window string, w savedWindow, alive map[string]bool) {
-	tm.Run("select-layout", "-t", window, w.Layout)
+	if l, err := tmux.ParseLayout(w.Layout); err == nil {
+		tm.ApplyLayout(window, l)
+	}
 	if alive[w.Active] {
 		tm.Run("select-pane", "-t", w.Active)
 	}

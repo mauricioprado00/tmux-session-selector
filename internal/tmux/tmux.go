@@ -357,6 +357,45 @@ func (t Tmux) ToggleZoom(pane string) error {
 	return err
 }
 
+// ApplyLayout gives window the layout l, each pane in the cell l names it
+// in. select-layout fills a layout's cells with the window's panes in their
+// order, whatever panes the layout names, so the panes are first swapped
+// into the layout's order.
+func (t Tmux) ApplyLayout(window string, l *Layout) error {
+	out, err := t.Run("list-panes", "-t", window, "-F", "#{pane_id}")
+	if err != nil {
+		return err
+	}
+	current := strings.Fields(out)
+	var want []string
+	for _, n := range l.Panes() {
+		want = append(want, "%"+strconv.Itoa(n))
+	}
+	if len(want) != len(current) {
+		return fmt.Errorf("the layout has %d panes, the window %d", len(want), len(current))
+	}
+	at := map[string]int{}
+	for i, id := range current {
+		at[id] = i
+	}
+	for i, id := range want {
+		j, ok := at[id]
+		if !ok {
+			return fmt.Errorf("pane %s is not in window %s", id, window)
+		}
+		if j == i {
+			continue
+		}
+		if _, err := t.Run("swap-pane", "-d", "-s", id, "-t", current[i]); err != nil {
+			return err
+		}
+		current[i], current[j] = id, current[i]
+		at[id], at[current[j]] = i, j
+	}
+	_, err = t.Run("select-layout", "-t", window, l.String())
+	return err
+}
+
 // Capture returns the screens of panes, keyed by pane id. All panes are
 // captured in one tmux invocation; after each, display-message prints a
 // marker line carrying the pane's cursor position.
