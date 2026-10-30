@@ -329,6 +329,28 @@ func (t Tmux) ClearMark() error {
 	return err
 }
 
+// PaneByTTY returns the id of the pane whose terminal is tty, and whether
+// its window is zoomed. The id is empty if no pane has that terminal, as for
+// a program in a popup.
+func (t Tmux) PaneByTTY(tty string) (id string, zoomed bool, err error) {
+	out, err := t.Run("list-panes", "-a", "-F", format([]string{"pane_id", "pane_tty", "window_zoomed_flag"}))
+	if err != nil {
+		return "", false, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if f := splitFields(line); len(f) == 3 && f[1] == tty {
+			return f[0], f[2] == "1", nil
+		}
+	}
+	return "", false, nil
+}
+
+// ToggleZoom zooms pane's window on pane, or unzooms it.
+func (t Tmux) ToggleZoom(pane string) error {
+	_, err := t.Run("resize-pane", "-Z", "-t", pane)
+	return err
+}
+
 // Capture returns the screens of panes, keyed by pane id. All panes are
 // captured in one tmux invocation; after each, display-message prints a
 // marker line carrying the pane's cursor position.

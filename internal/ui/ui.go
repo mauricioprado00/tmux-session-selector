@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sort"
 	"strconv"
@@ -41,6 +42,9 @@ type Options struct {
 	// AllGroups shows every session of a session group, like choose-tree -G,
 	// instead of one per group.
 	AllGroups bool
+	// Zoom zooms the pane the selector runs in while it runs, like
+	// choose-tree -Z. It does nothing in a popup.
+	Zoom bool
 }
 
 type model struct {
@@ -134,6 +138,11 @@ func Run(o Options) (*tmux.Target, error) {
 	}
 	m.setQuery()
 	m.selectCurrent()
+	if o.Zoom && o.Inside {
+		if unzoom := zoomOwnPane(o.Tmux); unzoom != nil {
+			defer unzoom()
+		}
+	}
 
 	t, err := openTerminal(true)
 	if err != nil {
@@ -186,6 +195,27 @@ func Run(o Options) (*tmux.Target, error) {
 			m.screens = map[string]screen{}
 		case <-quit:
 			return nil, nil
+		}
+	}
+}
+
+// zoomOwnPane zooms the pane whose terminal is ours, if it is not zoomed
+// already, and returns a function that unzooms it, or nil.
+func zoomOwnPane(tm tmux.Tmux) func() {
+	cmd := exec.Command("tty")
+	cmd.Stdin = os.Stdin
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	pane, zoomed, err := tm.PaneByTTY(strings.TrimSpace(string(out)))
+	if err != nil || pane == "" || zoomed || tm.ToggleZoom(pane) != nil {
+		return nil
+	}
+	return func() {
+		// Only undo our zoom: the pane may have been closed or unzoomed since.
+		if p, zoomed, _ := tm.PaneByTTY(strings.TrimSpace(string(out))); p == pane && zoomed {
+			tm.ToggleZoom(pane)
 		}
 	}
 }

@@ -218,3 +218,22 @@ func TestRunTemplate(t *testing.T) {
 		t.Error("want an error for an unknown command")
 	}
 }
+
+func TestPaneByTTYAndZoom(t *testing.T) {
+	tm := server(t)
+	mustRun(t, tm, "new-session", "-d", "-x", "80", "-y", "24")
+	pane := mustRun(t, tm, "split-window", "-d", "-P", "-F", "#{pane_id}")
+	tty := mustRun(t, tm, "display-message", "-p", "-t", pane, "#{pane_tty}")
+	if id, zoomed, err := tm.PaneByTTY(tty); err != nil || id != pane || zoomed {
+		t.Fatalf("PaneByTTY = %q %v %v", id, zoomed, err)
+	}
+	if err := tm.ToggleZoom(pane); err != nil {
+		t.Fatal(err)
+	}
+	if _, zoomed, _ := tm.PaneByTTY(tty); !zoomed {
+		t.Error("window should be zoomed")
+	}
+	if id, _, _ := tm.PaneByTTY("/dev/not-a-pane"); id != "" {
+		t.Errorf("unknown tty matched %q", id)
+	}
+}

@@ -49,6 +49,7 @@ func run() int {
 	command := flag.String("command", "", "tmux command to run on the chosen target instead of switching to it;\nthe first %% and every %1 become the target, e.g. \"join-pane -s '%%'\"")
 	sortOrder := flag.String("sort", "index", "sort order: "+strings.Join(ui.SortOrders, ", "))
 	reverse := flag.Bool("reverse", false, "reverse the sort order")
+	zoom := flag.Bool("zoom", false, "zoom the pane the selector runs in while it runs (not in a popup)")
 	allGroups := flag.Bool("all-groups", false, "show every session of a session group, not just one")
 	refresh := flag.Duration("refresh", 250*time.Millisecond, "how often the preview updates; 0 for a single snapshot")
 	showVersion := flag.Bool("version", false, "print the version and exit")
@@ -82,6 +83,7 @@ func run() int {
 		Sort:      *sortOrder,
 		Reverse:   *reverse,
 		AllGroups: *allGroups,
+		Zoom:      *zoom,
 	})
 	if err == nil && target != nil {
 		err = tm.Attach(*target)

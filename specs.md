@@ -396,9 +396,17 @@ tmux-session-selector [flags] [initial query]
   --sort ORDER    index (default), name or time; see §5
   --reverse       reverse the sort order
   --all-groups    show every session of a session group (tmux's -G)
+  --zoom          zoom the pane the selector runs in while it runs (tmux's
+                  -Z); see below
   --version       print the version and exit
   --help          print usage and exit
 ```
+
+`--zoom` finds the selector's own pane by matching its terminal (`tty`)
+against `pane_tty`, zooms the window on it if it is not zoomed already, and
+unzooms it on exit, but only if it is still zoomed by us. In a popup no pane
+has the selector's terminal (`$TMUX_PANE` there names the pane underneath), so
+nothing is zoomed.
 
 A positional initial query pre-fills the prompt, so a binding such as
 `bind W display-popup -E "tmux-session-selector s:work"` opens a pre-filtered

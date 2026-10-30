@@ -133,6 +133,8 @@ tmux-session-selector [flags] [initial query]
   -sort ORDER    index (default), name or time
   -reverse       reverse the sort order
   -all-groups    show every session of a session group, not just one
+  -zoom          zoom the selector's pane while it runs (for a new-window or
+                 split binding; has no effect in a popup)
   -version       print the version and exit
 ```
 
