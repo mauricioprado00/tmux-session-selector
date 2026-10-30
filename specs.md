@@ -313,6 +313,22 @@ than names, so names containing `:`, `.` or spaces cannot be misparsed.
 `switch-client` takes `-c <client>` when `--client` is given (see §9), so the
 correct client switches even when several are attached.
 
+### 8.1 Command template
+
+`--command` replaces the jump with any tmux command, as `choose-tree`'s
+`template` argument does. The first `%%` and every `%1` in it become the
+chosen target, written with ids (`$1`, `$1:@3` or `$1:@3.%7`). The line is
+passed to `tmux source-file -` on standard input, so it is parsed with tmux's
+own quoting and may hold several commands separated by `;`. For example:
+
+```tmux
+bind J display-popup -E "tmux-session-selector -command \"join-pane -h -s '%%'\""
+```
+
+Every way of choosing (Enter, double-click, Alt-digit, a click in the
+preview) runs the command, inside or outside tmux. If it fails, its error is
+shown on the prompt line, the list is reloaded and the selector stays open.
+
 When run **outside** tmux (`$TMUX` unset), the tool uses
 `attach-session -t <target>` instead, replacing its own process with tmux
 (`exec`).
@@ -353,6 +369,8 @@ tmux-session-selector [flags] [initial query]
   --no-preview    start with the preview hidden
   --refresh DUR   how often the preview updates (default 250ms; 0 for a
                   single snapshot)
+  --command CMD   run CMD on the chosen target instead of switching to it;
+                  see §8.1
   --sort ORDER    index (default), name or time; see §5
   --reverse       reverse the sort order
   --version       print the version and exit

@@ -123,6 +123,8 @@ tmux-session-selector [flags] [initial query]
   -regex         start in regex mode
   -no-preview    start with the preview hidden
   -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot)
+  -command CMD   run a tmux command on the chosen target instead of switching
+                 (the first %% and every %1 become the target)
   -sort ORDER    index (default), name or time
   -reverse       reverse the sort order
   -version       print the version and exit
@@ -132,6 +134,13 @@ An initial query gives a pre-filtered view, for example
 `bind W display-popup -E "tmux-session-selector s:work"`.
 
 Run outside tmux, it attaches to the selected session.
+
+Like `choose-tree`'s template, `-command` runs any tmux command on the chosen
+target instead, for example to pull a pane into the current window:
+
+```tmux
+bind J display-popup -E "tmux-session-selector -command \"join-pane -h -s '%%'\""
+```
 
 ## Development
 

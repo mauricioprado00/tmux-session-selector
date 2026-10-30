@@ -90,6 +90,19 @@ type Target struct {
 	Session, Window, Pane string
 }
 
+// String is the target in tmux's target syntax, using ids: $1, $1:@3 or
+// $1:@3.%7.
+func (t Target) String() string {
+	s := t.Session
+	if t.Window != "" {
+		s += ":" + t.Window
+	}
+	if t.Pane != "" {
+		s += "." + t.Pane
+	}
+	return s
+}
+
 // Tmux runs tmux commands. Args go before every command, for example
 // {"-L", "socket"}.
 type Tmux struct {
@@ -98,12 +111,33 @@ type Tmux struct {
 
 // Run runs one tmux command line and returns its standard output.
 func (t Tmux) Run(args ...string) (string, error) {
+	return t.run("", args...)
+}
+
+// RunTemplate runs a tmux command line written in tmux's own syntax, after
+// replacing the first %% and every %1 with target, as choose-tree does.
+func (t Tmux) RunTemplate(template string, target Target) error {
+	line := strings.Replace(template, "%%", target.String(), 1)
+	line = strings.ReplaceAll(line, "%1", target.String())
+	_, err := t.run(line+"\n", "source-file", "-")
+	return err
+}
+
+// run runs tmux with input on its standard input.
+func (t Tmux) run(input string, args ...string) (string, error) {
 	cmd := exec.Command("tmux", append(append([]string{}, t.Args...), args...)...)
+	if input != "" {
+		cmd.Stdin = strings.NewReader(input)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		// source-file reports parse errors on standard output.
 		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(string(out))
+		}
 		if msg == "" {
 			msg = err.Error()
 		}

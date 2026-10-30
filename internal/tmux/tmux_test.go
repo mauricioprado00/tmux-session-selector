@@ -200,3 +200,21 @@ func TestCapture(t *testing.T) {
 		t.Errorf("geometry: window %dx%d, panes %+v %+v", w.Width, w.Height, *w.Panes[0], *w.Panes[1])
 	}
 }
+
+func TestRunTemplate(t *testing.T) {
+	tm := server(t)
+	w := mustRun(t, tm, "new-session", "-d", "-P", "-F", "#{window_id}", "-s", "a")
+	target := Target{Session: "$0", Window: w}
+	if got := target.String(); got != "$0:"+w {
+		t.Errorf("String = %q", got)
+	}
+	if err := tm.RunTemplate("rename-window -t '%%' 'x %1'", target); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRun(t, tm, "display-message", "-p", "-t", w, "#{window_name}"); got != "x $0:"+w {
+		t.Errorf("window name = %q", got)
+	}
+	if err := tm.RunTemplate("no-such-command", target); err == nil {
+		t.Error("want an error for an unknown command")
+	}
+}

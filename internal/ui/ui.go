@@ -30,6 +30,10 @@ type Options struct {
 	// Refresh is how often the preview is captured again; 0 keeps the
 	// first capture of each pane for the whole run.
 	Refresh time.Duration
+	// Command, when set, is run on the chosen target instead of switching to
+	// it: a tmux command line where the first %% and every %1 become the
+	// target, as in choose-tree's template.
+	Command string
 	// Sort is one of SortOrders; empty means "index".
 	Sort    string
 	Reverse bool
@@ -54,7 +58,8 @@ type model struct {
 	treeH    int
 	preview  bool
 	help     bool
-	order    int // index into SortOrders
+	template string // Options.Command
+	order    int    // index into SortOrders
 	reverse  bool
 	screens  map[string]screen
 	height   int   // screen height at the last render
@@ -95,7 +100,8 @@ type hit struct {
 // and nil error means the user cancelled.
 func Run(o Options) (*tmux.Target, error) {
 	home, _ := os.UserHomeDir()
-	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query)}
+	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
+		template: o.Command}
 	if o.Regex {
 		m.mode = filter.Regex
 	}
@@ -470,13 +476,20 @@ func (m *model) kill(targets []tmux.Target) (done bool, target *tmux.Target, err
 	return false, nil, nil
 }
 
-// jump switches the client to t, or inside tmux returns t for the caller to
-// attach to. If the switch fails, the error is shown and the list reloaded.
+// jump acts on the chosen target t: it runs the command template if there
+// is one, else switches the client to t, or outside tmux returns t for the
+// caller to attach to. On failure the error is shown and the list reloaded.
 func (m *model) jump(t tmux.Target) (done bool, target *tmux.Target, err error) {
-	if !m.inside {
+	var failed error
+	switch {
+	case m.template != "":
+		failed = m.tmux.RunTemplate(m.template, t)
+	case !m.inside:
 		return true, &t, nil
+	default:
+		failed = m.tmux.Switch(m.client, t)
 	}
-	if err := m.tmux.Switch(m.client, t); err != nil {
+	if err := failed; err != nil {
 		// The target may have gone away since the list was read.
 		m.status = err.Error()
 		if err := m.load(); err != nil {

@@ -120,3 +120,21 @@ func TestFlags(t *testing.T) {
 		t.Errorf("marked pane row = %q", got)
 	}
 }
+
+func TestCommandTemplate(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "one")
+	m := liveModel(t, tm)
+	m.template = "rename-window -t '%%' chosen"
+	m.selectRow(t, "one")
+	if done, target, err := m.handle(event{key: keyEnter}); !done || target != nil || err != nil {
+		t.Fatalf("Enter = %v %+v %v", done, target, err)
+	}
+	if got := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_name}"); got != "chosen" {
+		t.Errorf("window name = %q", got)
+	}
+	m.template = "bogus-command"
+	if done, _, _ := m.handle(event{key: keyEnter}); done || !strings.Contains(m.status, "bogus-command") {
+		t.Errorf("a failing command should stay open with the error, got done=%v status %q", done, m.status)
+	}
+}
