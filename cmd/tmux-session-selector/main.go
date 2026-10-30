@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
+	"github.com/mauricioprado00/tmux-session-selector/internal/tmuxconf"
 	"github.com/mauricioprado00/tmux-session-selector/internal/ui"
 )
 
@@ -31,6 +32,66 @@ an uppercase letter):
 
 Press F1 in the selector for the keys.
 `
+
+// tmuxBinding adds (bind) or removes the selector's key binding, in the
+// configuration file and in the running tmux server, and reports what it did.
+func tmuxBinding(bind bool, key, config string, args []string) int {
+	fail := func(err error) int {
+		fmt.Fprintln(os.Stderr, "tmux-session-selector:", err)
+		return 1
+	}
+	if config == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fail(err)
+		}
+		config = tmuxconf.DefaultPath(home, os.Getenv("XDG_CONFIG_HOME"))
+	}
+	tm := tmux.Tmux{}
+	if !bind {
+		removed, live, err := tmuxconf.Uninstall(tm, config)
+		switch {
+		case err != nil:
+			return fail(err)
+		case removed == nil:
+			fmt.Printf("no tmux-session-selector binding in %s\n", config)
+		default:
+			fmt.Printf("removed the binding of prefix + %s from %s\n", removed.Key, config)
+			if live {
+				fmt.Printf("and from the running tmux server, restoring: %s\n", orNothing(removed.Previous))
+			}
+		}
+		return 0
+	}
+	if key == "" || strings.ContainsAny(key, " \t\n") {
+		fmt.Fprintln(os.Stderr, "tmux-session-selector: -key must be a tmux key name, such as w, W or C-s")
+		return 2
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return fail(err)
+	}
+	version, _ := tm.Run("-V")
+	b := tmuxconf.Binding{Key: key, Argv: append([]string{self}, args...), Popup: tmuxconf.HasPopup(version)}
+	live, err := tmuxconf.Install(tm, config, b)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("bound prefix + %s in %s:\n  %s\n", key, config, b.Line())
+	if live {
+		fmt.Println("It is active in the running tmux server now.")
+	} else {
+		fmt.Println("No tmux server is running; it takes effect when tmux starts.")
+	}
+	return 0
+}
+
+func orNothing(s string) string {
+	if s == "" {
+		return "nothing (the key was unbound)"
+	}
+	return s
+}
 
 func main() {
 	os.Exit(run())
@@ -54,11 +115,18 @@ func run() int {
 	allGroups := flag.Bool("all-groups", false, "show every session of a session group, not just one")
 	refresh := flag.Duration("refresh", 250*time.Millisecond, "how often the preview updates; 0 for a single snapshot")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	bind := flag.Bool("tmux-bind", false, "bind the selector to a key in tmux (see -key and -config)\nand exit; arguments after -- go into the bound command")
+	unbind := flag.Bool("tmux-unbind", false, "remove the binding -tmux-bind added, and exit")
+	key := flag.String("key", "w", "with -tmux-bind: the key, after tmux's prefix; w replaces tmux's chooser")
+	config := flag.String("config", "", "with -tmux-bind or -tmux-unbind: the tmux configuration file\n(default: the one tmux reads, such as ~/.tmux.conf)")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("tmux-session-selector", version)
 		return 0
+	}
+	if *bind || *unbind {
+		return tmuxBinding(*bind, *key, *config, flag.Args())
 	}
 	if !slices.Contains(ui.SortOrders, *sortOrder) {
 		fmt.Fprintf(os.Stderr, "tmux-session-selector: -sort must be one of %s\n", strings.Join(ui.SortOrders, ", "))

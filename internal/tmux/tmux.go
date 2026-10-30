@@ -121,7 +121,12 @@ func (t Tmux) Run(args ...string) (string, error) {
 // replacing the first %% and every %1 with target, as choose-tree does.
 func (t Tmux) RunTemplate(template string, target Target) error {
 	line := strings.Replace(template, "%%", target.String(), 1)
-	line = strings.ReplaceAll(line, "%1", target.String())
+	return t.RunLine(strings.ReplaceAll(line, "%1", target.String()))
+}
+
+// RunLine runs a command line written in tmux's own syntax, as in a
+// configuration file.
+func (t Tmux) RunLine(line string) error {
 	_, err := t.run(line+"\n", "source-file", "-")
 	return err
 }

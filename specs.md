@@ -456,7 +456,36 @@ bind w new-window -n select tmux-session-selector
 
 The temporary window closes itself when the program exits.
 
-### 9.3 Command line
+### 9.3 Binding from the binary
+
+`--tmux-bind` and `--tmux-unbind` do 9.1 or 9.2 for the user, then exit.
+
+- `--tmux-bind [--key KEY] [--config PATH] [-- ARGS…]` binds `KEY` (default
+  `w`, replacing tmux's chooser) in tmux's prefix table to the selector,
+  given by the binary's absolute path (`os.Executable`), so tmux's `PATH` does
+  not matter; `ARGS` are added to the bound command. It uses `display-popup`
+  when `tmux -V` is 3.2 or later (or not a release number), else
+  `new-window`. Words are quoted for the shell and then for tmux's
+  configuration syntax, which expands `$VARIABLES` inside double quotes.
+- The configuration file is `--config`, or else the one tmux reads: the first
+  that exists of `~/.tmux.conf`, `$XDG_CONFIG_HOME/tmux/tmux.conf`,
+  `~/.config/tmux/tmux.conf`, else `~/.tmux.conf`, created if missing. The
+  binding goes in a block between `# >>> tmux-session-selector >>>` and
+  `# <<< tmux-session-selector <<<`, after one blank line, which also records
+  the key and what it was bound to before (`# previous:`, as `list-keys`
+  prints it). Binding again replaces the block. The file is written in place,
+  keeping its mode and following a symlink, as dotfiles often are.
+- If a tmux server is running, the binding is applied to it at once with
+  `bind-key`; moving the binding to another key restores the old key's
+  previous binding.
+- `--tmux-unbind [--config PATH]` removes the block, and the blank line before
+  it, and in a running server unbinds the key and re-runs the recorded
+  previous binding, e.g. `bind-key -T prefix w choose-tree -Zw`.
+
+Each prints what it did. Exit status 0, 1 on an I/O or tmux error, 2 for an
+invalid `--key`.
+
+### 9.4 Command line
 
 ```
 tmux-session-selector [flags] [initial query]
@@ -472,6 +501,10 @@ tmux-session-selector [flags] [initial query]
   --sort ORDER    index (default), name or time; see §5
   --reverse       reverse the sort order
   --all-groups    show every session of a session group (tmux's -G)
+  --tmux-bind     bind the selector in tmux and exit; see §9.3
+  --tmux-unbind   remove that binding and exit
+  --key KEY       the key for --tmux-bind, after the prefix (default w)
+  --config PATH   the tmux configuration file for --tmux-bind / --tmux-unbind
   --zoom          zoom the pane the selector runs in while it runs (tmux's
                   -Z); see below
   --version       print the version and exit
@@ -488,7 +521,7 @@ A positional initial query pre-fills the prompt, so a binding such as
 `bind W display-popup -E "tmux-session-selector s:work"` opens a pre-filtered
 view.
 
-### 9.4 Exit status
+### 9.5 Exit status
 
 | Code | Meaning |
 |---|---|
@@ -519,6 +552,7 @@ cmd/tmux-session-selector/main.go   flags, wiring
 internal/tmux/                      run tmux, parse list-panes output, build the tree
 internal/filter/                    query parsing and matching (pure, no I/O)
 internal/ui/                        terminal raw mode, input decoding, rendering
+internal/tmuxconf/                  --tmux-bind / --tmux-unbind: the config block and live binding
 .github/workflows/ci.yml
 .github/workflows/release.yml
 README.md                           install, key binding, query syntax

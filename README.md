@@ -43,7 +43,23 @@ go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session-sel
 
 ## Bind it
 
-In `~/.tmux.conf` (tmux 3.2 or newer), replacing the built-in chooser:
+Let the binary do it:
+
+```sh
+tmux-session-selector -tmux-bind                  # prefix + w, replacing tmux's chooser
+tmux-session-selector -tmux-bind -key W           # or another key
+tmux-session-selector -tmux-bind -- -normal       # arguments after -- go into the binding
+tmux-session-selector -tmux-unbind                # remove it again
+```
+
+It writes a marked block to the configuration file tmux reads (the first of
+`~/.tmux.conf`, `$XDG_CONFIG_HOME/tmux/tmux.conf`, `~/.config/tmux/tmux.conf`
+that exists; `-config PATH` picks another) and applies it to the running tmux
+server at once. The binding uses the binary's absolute path, so install it
+where it will stay before binding. Unbinding restores what the key did
+before, such as tmux's own chooser on `w`.
+
+By hand, the line is (tmux 3.2 or newer):
 
 ```tmux
 bind w display-popup -E -w 80% -h 80% tmux-session-selector
@@ -145,6 +161,10 @@ tmux-session-selector [flags] [initial query]
   -sort ORDER    index (default), name or time
   -reverse       reverse the sort order
   -all-groups    show every session of a session group, not just one
+  -tmux-bind     bind the selector in tmux and exit (-key, -config; args after --)
+  -tmux-unbind   remove that binding and exit
+  -key KEY       the key for -tmux-bind, after tmux's prefix (default w)
+  -config PATH   the tmux configuration file for -tmux-bind / -tmux-unbind
   -zoom          zoom the selector's pane while it runs (for a new-window or
                  split binding; has no effect in a popup)
   -version       print the version and exit
