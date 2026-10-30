@@ -68,6 +68,12 @@ when `--client` names one. It is used to mark and pre-select the current row.
 
 A window linked into several sessions appears under each of them.
 
+Sessions in a session group share their windows, so, like tmux's chooser,
+only one session of each group is shown unless `--all-groups` (tmux's `-G`)
+is given: the session the client is in, if it is in the group, else the
+group's first (lowest id). Its row says `group NAME: a,b`. Fields read for
+this: `session_group`, `session_group_list`.
+
 Rows are grouped into a tree: session → window → pane. Windows with a single
 pane do not show a pane row; the window row stands for that pane.
 
@@ -389,6 +395,7 @@ tmux-session-selector [flags] [initial query]
                   see §8.1
   --sort ORDER    index (default), name or time; see §5
   --reverse       reverse the sort order
+  --all-groups    show every session of a session group (tmux's -G)
   --version       print the version and exit
   --help          print usage and exit
 ```

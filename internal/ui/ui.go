@@ -38,35 +38,39 @@ type Options struct {
 	// Sort is one of SortOrders; empty means "index".
 	Sort    string
 	Reverse bool
+	// AllGroups shows every session of a session group, like choose-tree -G,
+	// instead of one per group.
+	AllGroups bool
 }
 
 type model struct {
-	tmux     tmux.Tmux
-	client   string
-	inside   bool
-	home     string
-	roots    []*node
-	total    int
-	query    []rune
-	mode     filter.Mode
-	matcher  *filter.Matcher
-	queryErr string // invalid regex; the last valid result stays shown
-	status   string // error from the last action, cleared on the next key
-	rows     []row
-	matches  int
-	sel      int
-	top      int
-	treeH    int
-	preview  bool
-	help     bool
-	template string // Options.Command
-	order    int    // index into SortOrders
-	reverse  bool
-	screens  map[string]screen
-	height   int   // screen height at the last render
-	previewY int   // screen row where the preview starts
-	previewH int   // preview height at the last render; 0 when not shown
-	hits     []hit // clickable boxes of the preview
+	tmux      tmux.Tmux
+	client    string
+	inside    bool
+	home      string
+	roots     []*node
+	total     int
+	query     []rune
+	mode      filter.Mode
+	matcher   *filter.Matcher
+	queryErr  string // invalid regex; the last valid result stays shown
+	status    string // error from the last action, cleared on the next key
+	rows      []row
+	matches   int
+	sel       int
+	top       int
+	treeH     int
+	preview   bool
+	help      bool
+	template  string // Options.Command
+	allGroups bool
+	order     int // index into SortOrders
+	reverse   bool
+	screens   map[string]screen
+	height    int   // screen height at the last render
+	previewY  int   // screen row where the preview starts
+	previewH  int   // preview height at the last render; 0 when not shown
+	hits      []hit // clickable boxes of the preview
 	// The first window shown in a session preview, and for which session.
 	winOffset    int
 	winOffsetFor *tmux.Session
@@ -115,7 +119,7 @@ type hit struct {
 func Run(o Options) (*tmux.Target, error) {
 	home, _ := os.UserHomeDir()
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
-		template: o.Command}
+		template: o.Command, allGroups: o.AllGroups}
 	if o.Regex {
 		m.mode = filter.Regex
 	}
@@ -197,6 +201,9 @@ func (m *model) load() error {
 		if here, err = m.tmux.Current(m.client); err != nil {
 			return err
 		}
+	}
+	if !m.allGroups {
+		sessions = squashGroups(sessions, here.Session)
 	}
 	m.roots, m.total = buildTree(sessions, here, m.home)
 	sortTree(m.roots, m.order, m.reverse)
@@ -879,6 +886,9 @@ func (m *model) rowContent(n *node) []span {
 		info := fmt.Sprintf("  (%d windows", len(n.session.Windows))
 		if len(n.session.Windows) == 1 {
 			info = "  (1 window"
+		}
+		if n.session.Group != "" {
+			info += ", group " + clean(n.session.Group) + ": " + clean(n.session.GroupList)
 		}
 		if n.session.Attached {
 			info += ", attached"

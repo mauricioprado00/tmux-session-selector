@@ -64,7 +64,10 @@ type Session struct {
 	Name     string
 	Attached bool
 	Activity int64 // Unix time of the last activity
-	Windows  []*Window
+	// Group is the session group's name and GroupList its members, as
+	// "a,b"; both are empty for a session not in a group.
+	Group, GroupList string
+	Windows          []*Window
 }
 
 // ActiveWindow returns the session's current window, or its first one.
@@ -154,6 +157,7 @@ var paneFields = []string{
 	"pane_left", "pane_top", "pane_width", "pane_height", "cursor_x", "cursor_y",
 	"window_width", "window_height", "window_zoomed_flag",
 	"window_raw_flags", "pane_marked", "session_activity", "window_activity",
+	"session_group", "session_group_list",
 }
 
 var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
@@ -187,7 +191,8 @@ func ParsePanes(out string) ([]*Session, error) {
 		}
 		s := bySession[f[0]]
 		if s == nil {
-			s = &Session{ID: f[0], Name: f[1], Attached: f[2] != "0", Activity: int64(atoi(f[24]))}
+			s = &Session{ID: f[0], Name: f[1], Attached: f[2] != "0", Activity: int64(atoi(f[24])),
+				Group: f[26], GroupList: f[27]}
 			bySession[f[0]] = s
 			sessions = append(sessions, s)
 		}

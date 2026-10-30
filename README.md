@@ -132,6 +132,7 @@ tmux-session-selector [flags] [initial query]
                  (the first %% and every %1 become the target)
   -sort ORDER    index (default), name or time
   -reverse       reverse the sort order
+  -all-groups    show every session of a session group, not just one
   -version       print the version and exit
 ```
 

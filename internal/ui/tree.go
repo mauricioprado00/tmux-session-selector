@@ -107,6 +107,25 @@ func (n *node) describe() string {
 	return "pane " + n.pane.ID + " (" + n.command + ")"
 }
 
+// squashGroups keeps one session of each session group, as tmux's chooser
+// does without -G: the one the client is in, else the group's first.
+func squashGroups(sessions []*tmux.Session, current string) []*tmux.Session {
+	keep := map[string]*tmux.Session{}
+	for _, s := range sessions {
+		k := keep[s.Group]
+		if s.Group != "" && (k == nil || s.ID == current || (k.ID != current && idNumber(s.ID) < idNumber(k.ID))) {
+			keep[s.Group] = s
+		}
+	}
+	var out []*tmux.Session
+	for _, s := range sessions {
+		if s.Group == "" || keep[s.Group] == s {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // SortOrders are the orders the tree can be sorted in, as in tmux's chooser:
 // sessions by id (creation) and windows by index; by name; or by time, most
 // recently active first. Panes are always in index order.

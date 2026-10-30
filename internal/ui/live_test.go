@@ -233,3 +233,50 @@ func TestMark(t *testing.T) {
 		t.Errorf("Alt-M should clear the mark, still in %q", got)
 	}
 }
+
+func TestSessionGroups(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a")
+	tmuxRun(t, tm, "new-session", "-d", "-t", "a", "-s", "a2")
+	tmuxRun(t, tm, "new-session", "-d", "-s", "solo")
+	sessionNames := func(m *model) string {
+		var s []string
+		for _, n := range m.roots {
+			s = append(s, n.name)
+		}
+		return strings.Join(s, " ")
+	}
+	m := liveModel(t, tm)
+	if got := sessionNames(m); got != "a solo" {
+		t.Errorf("one session per group: %q", got)
+	}
+	if got := m.rowText(m.roots[0]); !strings.Contains(got, "group a: a,a2") {
+		t.Errorf("session row = %q", got)
+	}
+	m = &model{tmux: tm, allGroups: true}
+	m.load()
+	if got := sessionNames(m); got != "a a2 solo" {
+		t.Errorf("with all groups: %q", got)
+	}
+}
+
+func TestSquashGroupsKeepsCurrent(t *testing.T) {
+	sessions := []*tmux.Session{
+		{ID: "$3", Name: "b", Group: "g"},
+		{ID: "$1", Name: "c", Group: "g"},
+		{ID: "$2", Name: "d"},
+	}
+	name := func(ss []*tmux.Session) string {
+		var s []string
+		for _, x := range ss {
+			s = append(s, x.Name)
+		}
+		return strings.Join(s, " ")
+	}
+	if got := name(squashGroups(sessions, "")); got != "c d" {
+		t.Errorf("first of group: %q", got)
+	}
+	if got := name(squashGroups(sessions, "$3")); got != "b d" {
+		t.Errorf("client's own session: %q", got)
+	}
+}
