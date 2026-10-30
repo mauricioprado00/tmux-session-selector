@@ -387,6 +387,12 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		m.refresh()
 	case 'h', 'H':
 		m.selectStart()
+	case '+', '=':
+		setExpanded(m.roots, true)
+		m.refresh()
+	case '-':
+		setExpanded(m.roots, false)
+		m.refresh()
 	case 'r':
 		m.reverse = !m.reverse
 		sortTree(m.roots, m.order, m.reverse)
@@ -401,6 +407,14 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		}
 	}
 	return false, nil, nil
+}
+
+// setExpanded expands or collapses every row of the tree.
+func setExpanded(nodes []*node, expanded bool) {
+	for _, n := range nodes {
+		n.expanded = expanded
+		setExpanded(n.children, expanded)
+	}
 }
 
 // selectStart selects the row of the pane the selector was started from,
@@ -709,6 +723,7 @@ var helpText = []string{
 	"  Alt-x          kill the selected session, window or pane (asks y/n)",
 	"  Alt-o / Alt-r  sort by index, name or time (recent first); reverse",
 	"  Alt-h          back to the pane the selector was started from",
+	"  Alt-+ / Alt--  expand / collapse everything (Alt-= also expands)",
 	"  < >            scroll the windows of a session preview (empty query)",
 	"  Esc            close (this help, then the selector)",
 	"",

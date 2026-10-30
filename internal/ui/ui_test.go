@@ -325,3 +325,22 @@ func TestSelectStart(t *testing.T) {
 		t.Errorf("Alt-H should expand the window and select %%2, got %+v", n)
 	}
 }
+
+func TestExpandCollapseAll(t *testing.T) {
+	m := &model{roots: testTree(), total: 7}
+	m.setQuery()
+	m.handle(event{key: keyEnd}) // posts
+	m.handle(alt('-'))
+	if got := strings.Join(names(m.rows), " "); got != "api blog" || m.selected().name != "blog" {
+		t.Errorf("after Alt--: %q, selected %q", got, m.selected().name)
+	}
+	m.handle(alt('+'))
+	if len(m.rows) != 7 || m.selected().name != "blog" {
+		t.Errorf("after Alt-+: %q", names(m.rows))
+	}
+	m.handle(alt('-'))
+	m.handle(alt('='))
+	if len(m.rows) != 7 {
+		t.Errorf("Alt-= should expand too: %q", names(m.rows))
+	}
+}

@@ -227,6 +227,7 @@ Alt-O.
 | `Alt-o` (or `Alt-O`) | `O` | Change the sort order: index → name → time (§5). |
 | `Alt-r` | `r` | Reverse the sort order. |
 | `Alt-h` (or `Alt-H`) | `H` | Select the pane the selector was started from, expanding its window, and clearing the query if it hides that pane. Does nothing outside tmux. |
+| `Alt-+` (or `Alt-=`) / `Alt--` | `M-+` / `M--` | Expand / collapse every session and window. The selection moves to the nearest visible ancestor if it is hidden. |
 
 While a question is shown, `y` or `Y` confirms and any other key cancels.
 
