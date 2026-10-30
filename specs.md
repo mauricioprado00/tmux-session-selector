@@ -224,6 +224,11 @@ Alt-O.
 | Key | tmux | Action |
 |---|---|---|
 | `Alt-x` | `x` | Kill the selected session, window or pane, after a `y/n` question on the prompt line (`kill-session`, `kill-window` or `kill-pane`). The tree is reloaded and the selection stays at the same position. |
+| `Alt-t` | `t` | Tag or untag the selected row, then move down. Tagged rows are shown in bold magenta and the prompt line counts them. Tags are kept by target, so they survive reloads. |
+| `Alt-T` | `T` | Untag everything. |
+| `Ctrl-T` | `C-t` | Tag every row that matches the query (context rows are not tagged). |
+| `Alt-X` | `X` | Kill every tagged item, after a `y/n` question; panes go first, then windows, then sessions, so none has gone before its turn. With nothing tagged, the selected row. |
+| `Alt-:` (or `Alt-;`) | `:` | Read a tmux command on the prompt line and run it on every tagged item (or the selected row if none), with `%%` and `%1` replaced by each target as in §8.1. `Esc` cancels. The tree is reloaded afterwards. |
 | `Alt-o` (or `Alt-O`) | `O` | Change the sort order: index → name → time (§5). |
 | `Alt-r` | `r` | Reverse the sort order. |
 | `Alt-h` (or `Alt-H`) | `H` | Select the pane the selector was started from, expanding its window, and clearing the query if it hides that pane. Does nothing outside tmux. |

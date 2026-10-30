@@ -28,6 +28,7 @@ const (
 	keyCancel
 	keyMouse
 	keyAlt
+	keyTagAll
 )
 
 type event struct {
@@ -53,6 +54,7 @@ var ctrlKeys = map[byte]key{
 	'\t': keyExpand,
 	0x12: keyToggleRegex,   // Ctrl-R
 	0x16: keyTogglePreview, // Ctrl-V
+	0x14: keyTagAll,        // Ctrl-T
 	0x03: keyCancel,        // Ctrl-C
 	0x07: keyCancel,        // Ctrl-G
 }

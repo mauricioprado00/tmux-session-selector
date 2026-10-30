@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -71,6 +72,10 @@ type model struct {
 	winOffsetFor *tmux.Session
 	// A question waiting for y or n on the prompt line.
 	confirm *confirmation
+	// A line of input being typed on the prompt line instead of the query.
+	input *inputPrompt
+	// Tagged rows, by target, so tags survive reloading the tree.
+	tags map[string]tmux.Target
 	// The last left click, to detect a double click.
 	lastClickRow int
 	lastClickAt  time.Time
@@ -80,6 +85,13 @@ type model struct {
 type confirmation struct {
 	question string
 	action   func() (done bool, target *tmux.Target, err error)
+}
+
+// inputPrompt reads a line on the prompt line; action runs on Enter.
+type inputPrompt struct {
+	label  string
+	text   []rune
+	action func(text string) (done bool, target *tmux.Target, err error)
 }
 
 // doubleClick is the longest gap between the clicks of a double click.
@@ -285,6 +297,26 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		}
 		return false, nil, nil
 	}
+	if p := m.input; p != nil {
+		switch ev.key {
+		case keyRune:
+			p.text = append(p.text, ev.r)
+		case keyBackspace:
+			if len(p.text) > 0 {
+				p.text = p.text[:len(p.text)-1]
+			}
+		case keyDeleteWord:
+			p.text = deleteWord(p.text)
+		case keyClear:
+			p.text = nil
+		case keyCancel:
+			m.input = nil
+		case keyEnter:
+			m.input = nil
+			return p.action(string(p.text))
+		}
+		return false, nil, nil
+	}
 	if m.help {
 		if ev.key == keyMouse {
 			if ev.press && ev.button == 0 {
@@ -321,15 +353,14 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 			m.setQuery()
 		}
 	case keyDeleteWord:
-		q := m.query
-		for len(q) > 0 && unicode.IsSpace(q[len(q)-1]) {
-			q = q[:len(q)-1]
-		}
-		for len(q) > 0 && !unicode.IsSpace(q[len(q)-1]) {
-			q = q[:len(q)-1]
-		}
-		m.query = q
+		m.query = deleteWord(m.query)
 		m.setQuery()
+	case keyTagAll:
+		for _, r := range m.rows {
+			if !r.context {
+				m.tag(r.n, true)
+			}
+		}
 	case keyClear:
 		m.query = nil
 		m.setQuery()
@@ -419,8 +450,121 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 				action:   func() (bool, *tmux.Target, error) { return m.kill([]tmux.Target{t}) },
 			}
 		}
+	case 't':
+		if n := m.selected(); n != nil {
+			m.tag(n, !m.tagged(n))
+			m.move(1)
+		}
+	case 'T':
+		m.tags = nil
+	case 'X':
+		if targets, what := m.actionTargets(); len(targets) > 0 {
+			m.confirm = &confirmation{
+				question: "Kill " + what + "?",
+				action: func() (bool, *tmux.Target, error) {
+					m.tags = nil
+					return m.kill(targets)
+				},
+			}
+		}
+	case ':', ';':
+		if targets, what := m.actionTargets(); len(targets) > 0 {
+			m.input = &inputPrompt{
+				label:  "command for " + what + ": ",
+				action: func(text string) (bool, *tmux.Target, error) { return m.runEach(text, targets) },
+			}
+		}
 	}
 	return false, nil, nil
+}
+
+func (m *model) tagged(n *node) bool {
+	_, ok := m.tags[n.target().String()]
+	return ok
+}
+
+func (m *model) tag(n *node, on bool) {
+	t := n.target()
+	if !on {
+		delete(m.tags, t.String())
+		return
+	}
+	if m.tags == nil {
+		m.tags = map[string]tmux.Target{}
+	}
+	m.tags[t.String()] = t
+}
+
+// actionTargets is what Alt-X and Alt-: act on: the tagged items, panes
+// before windows before sessions so that none is gone before its turn, or
+// else the selected row. what describes them for a question.
+func (m *model) actionTargets() (targets []tmux.Target, what string) {
+	if len(m.tags) == 0 {
+		if n := m.selected(); n != nil {
+			return []tmux.Target{n.target()}, n.describe()
+		}
+		return nil, ""
+	}
+	for _, t := range m.tags {
+		targets = append(targets, t)
+	}
+	depth := func(t tmux.Target) int {
+		switch {
+		case t.Pane != "":
+			return 2
+		case t.Window != "":
+			return 1
+		}
+		return 0
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if di, dj := depth(targets[i]), depth(targets[j]); di != dj {
+			return di > dj
+		}
+		return targets[i].String() < targets[j].String()
+	})
+	what = fmt.Sprintf("%d tagged items", len(targets))
+	if len(targets) == 1 {
+		what = "1 tagged item"
+	}
+	return targets, what
+}
+
+// runEach runs a command template on each target, then reloads the tree.
+func (m *model) runEach(template string, targets []tmux.Target) (done bool, target *tmux.Target, err error) {
+	if strings.TrimSpace(template) == "" {
+		return false, nil, nil
+	}
+	for _, t := range targets {
+		if err := m.tmux.RunTemplate(template, t); err != nil {
+			m.status = err.Error()
+			break
+		}
+	}
+	return m.reload(), nil, nil
+}
+
+// reload reads the tree again, keeping the selection at the same position.
+// done is set when the server has gone, after its last session was killed.
+func (m *model) reload() (done bool) {
+	idx := m.sel
+	if err := m.load(); err != nil {
+		return true
+	}
+	m.refresh()
+	m.sel = max(0, min(idx, len(m.rows)-1))
+	return false
+}
+
+// deleteWord removes the last word, and the spaces after it, from text.
+func deleteWord(text []rune) []rune {
+	for len(text) > 0 && unicode.IsSpace(text[len(text)-1]) {
+		text = text[:len(text)-1]
+	}
+	for len(text) > 0 && !unicode.IsSpace(text[len(text)-1]) {
+		text = text[:len(text)-1]
+	}
+	return text
 }
 
 // setExpanded expands or collapses every row of the tree.
@@ -458,22 +602,15 @@ func (m *model) selectStart() {
 	m.sel = m.indexOf(start)
 }
 
-// kill kills targets, then reloads the tree, keeping the selection at the
-// same position.
+// kill kills targets, then reloads the tree.
 func (m *model) kill(targets []tmux.Target) (done bool, target *tmux.Target, err error) {
-	idx := m.sel
 	for _, t := range targets {
 		if err := m.tmux.Kill(t); err != nil {
 			m.status = err.Error()
 			break
 		}
 	}
-	if err := m.load(); err != nil {
-		return true, nil, nil // the last session went, and the server with it
-	}
-	m.refresh()
-	m.sel = max(0, min(idx, len(m.rows)-1))
-	return false, nil, nil
+	return m.reload(), nil, nil
 }
 
 // jump acts on the chosen target t: it runs the command template if there
@@ -625,6 +762,9 @@ func (m *model) render(width, height int) string {
 			if r.context {
 				base = styleDim
 			}
+			if m.tagged(r.n) {
+				base = joinStyles(base, styleTagged)
+			}
 			if idx == m.sel {
 				base = joinStyles(base, styleSelect)
 			}
@@ -640,7 +780,7 @@ func (m *model) render(width, height int) string {
 		m.drawPreview(&b, 2+m.treeH, width, previewH)
 	}
 	drawLine(&b, height-1, width, styleDim, false, span{text: footer})
-	cursor := min(width, 3+textWidth(string(m.query)))
+	cursor := m.drawPromptCursor(width)
 	fmt.Fprintf(&b, "\x1b[1;%dH\x1b[?25h", cursor)
 	return b.String()
 }
@@ -651,23 +791,38 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 	if m.reverse {
 		order += ", reversed"
 	}
-	right := span{text: fmt.Sprintf("(sort: %s)  [%s]  %d/%d", order, m.matcher.Mode(), m.matches, m.total), style: styleDim}
+	status := fmt.Sprintf("(sort: %s)  [%s]  %d/%d", order, m.matcher.Mode(), m.matches, m.total)
+	if len(m.tags) > 0 {
+		status = fmt.Sprintf("%d tagged  ", len(m.tags)) + status
+	}
+	right := span{text: status, style: styleDim}
 	switch {
 	case m.status != "":
 		right = span{text: clean(m.status), style: styleError}
 	case m.queryErr != "":
 		right = span{text: clean(m.queryErr), style: styleError}
 	}
+	prompt := span{text: "> ", style: styleCurrent}
 	hint := span{text: query}
 	switch {
+	case m.input != nil:
+		prompt = span{text: clean(m.input.label), style: styleConfirm}
+		hint = span{text: clean(string(m.input.text))}
 	case m.confirm != nil:
 		hint = span{text: clean(m.confirm.question) + " (y/n)", style: styleConfirm}
 	case query == "":
 		hint = span{text: "type to filter · ? for help", style: styleDim}
 	}
-	gap := max(2, width-2-textWidth(hint.text)-textWidth(right.text))
-	drawLine(b, 0, width, "", false,
-		span{text: "> ", style: styleCurrent}, hint, span{text: strings.Repeat(" ", gap)}, right)
+	gap := max(2, width-textWidth(prompt.text)-textWidth(hint.text)-textWidth(right.text))
+	drawLine(b, 0, width, "", false, prompt, hint, span{text: strings.Repeat(" ", gap)}, right)
+}
+
+// drawPromptCursor is the 1-based column of the cursor on the prompt line.
+func (m *model) drawPromptCursor(width int) int {
+	if m.input != nil {
+		return min(width, 1+textWidth(clean(m.input.label))+textWidth(string(m.input.text)))
+	}
+	return min(width, 3+textWidth(string(m.query)))
 }
 
 // rowSpans draws row n, which is on line i of the tree area.
@@ -757,6 +912,9 @@ var helpText = []string{
 	"  Ctrl-V         show or hide the preview",
 	"  ? or F1        this help (? only when the query is empty)",
 	"  Alt-x          kill the selected session, window or pane (asks y/n)",
+	"  Alt-t / Alt-T  tag or untag the selected row / untag all; Ctrl-T tags all",
+	"  Alt-X / Alt-:  kill / run a command (%% is the target) on each tagged",
+	"                 item, or on the selected one if none is tagged",
 	"  Alt-o / Alt-r  sort by index, name or time (recent first); reverse",
 	"  Alt-h          back to the pane the selector was started from",
 	"  Alt-+ / Alt--  expand / collapse everything (Alt-= also expands)",

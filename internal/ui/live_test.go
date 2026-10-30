@@ -138,3 +138,76 @@ func TestCommandTemplate(t *testing.T) {
 		t.Errorf("a failing command should stay open with the error, got done=%v status %q", done, m.status)
 	}
 }
+
+func typeText(m *model, s string) {
+	for _, r := range s {
+		m.handle(typed(r))
+	}
+}
+
+func windowNames(t *testing.T, tm tmux.Tmux, session string) string {
+	return strings.ReplaceAll(tmuxRun(t, tm, "list-windows", "-t", session, "-F", "#{window_name}"), "\n", " ")
+}
+
+func TestTags(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "w0")
+	for _, name := range []string{"w1", "w2", "w3"} {
+		tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", name)
+	}
+	m := liveModel(t, tm)
+
+	// Alt-t tags and moves down, so two presses tag w1 and w2.
+	m.selectRow(t, "w1")
+	m.handle(alt('t'))
+	m.handle(alt('t'))
+	if len(m.tags) != 2 || m.selected().name != "w3" {
+		t.Fatalf("tags %v, selected %q", m.tags, m.selected().name)
+	}
+	m.handle(alt(':'))
+	if m.input == nil || m.input.label != "command for 2 tagged items: " {
+		t.Fatalf("input = %+v", m.input)
+	}
+	typeText(m, "rename-window -t '%%' tagged")
+	m.handle(event{key: keyEnter})
+	if got := windowNames(t, tm, "a"); got != "w0 tagged tagged w3" {
+		t.Errorf("after the command: %q", got)
+	}
+	if len(m.tags) != 2 {
+		t.Errorf("tags should survive the reload: %v", m.tags)
+	}
+
+	m.handle(alt('X'))
+	if m.confirm == nil || m.confirm.question != "Kill 2 tagged items?" {
+		t.Fatalf("confirm = %+v", m.confirm)
+	}
+	m.handle(typed('y'))
+	if got := windowNames(t, tm, "a"); got != "w0 w3" || len(m.tags) != 0 {
+		t.Errorf("after killing tagged: %q, tags %v", got, m.tags)
+	}
+
+	// Nothing tagged: Alt-: acts on the selected row.
+	m.selectRow(t, "w3")
+	m.handle(alt(';'))
+	typeText(m, "rename-window -t '%%' solo")
+	m.handle(event{key: keyEnter})
+	if got := windowNames(t, tm, "a"); got != "w0 solo" {
+		t.Errorf("command on the selected row: %q", got)
+	}
+
+	// Ctrl-T tags every match; Alt-T clears.
+	typeText(m, "w0")
+	m.handle(event{key: keyTagAll})
+	if len(m.tags) != 1 {
+		t.Errorf("Ctrl-T should tag the one match, got %v", m.tags)
+	}
+	m.handle(alt('T'))
+	if len(m.tags) != 0 {
+		t.Errorf("Alt-T should clear tags, got %v", m.tags)
+	}
+	m.handle(alt(':'))
+	m.handle(event{key: keyCancel})
+	if m.input != nil || len(m.query) != 2 {
+		t.Errorf("Esc should close the prompt and keep the query")
+	}
+}
