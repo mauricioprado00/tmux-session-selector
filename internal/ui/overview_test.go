@@ -253,3 +253,39 @@ func TestFocusPointThroughCentre(t *testing.T) {
 		}
 	}
 }
+
+func TestGuillotineCentred(t *testing.T) {
+	ws := windows(12) // a centre and 11 around it: one ring cell is empty
+	for i, w := range ws {
+		w.Layout = fmt.Sprintf("0000,80x24,0,0,%d", i)
+	}
+	var items []placed
+	for i, box := range overviewLayout(ws, 8, 200, 60) {
+		items = append(items, placed{box, ws[i]})
+	}
+	tree := guillotine(items)
+	if tree == nil {
+		t.Fatal("the centred overview should cut into rows and columns")
+	}
+	l, err := tree.place(0, 0, 200, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(l.Panes()); got != 12 {
+		t.Errorf("%d panes, want 12", got)
+	}
+	// Rows: the top ring, the middle band, the bottom ring.
+	if l.SideBySide || len(l.Children) != 3 {
+		t.Fatalf("layout = %s", l)
+	}
+	// The centre window (pane 8) takes the middle half of the width.
+	var centre *tmux.Layout
+	for _, c := range l.Children[1].Children {
+		if len(c.Children) == 0 && c.Pane == 8 {
+			centre = c
+		}
+	}
+	if centre == nil || centre.W < 95 || centre.W > 105 {
+		t.Errorf("centre = %+v, want about 100 wide", centre)
+	}
+}

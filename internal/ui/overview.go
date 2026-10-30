@@ -33,6 +33,8 @@ type overview struct {
 	// row) it was entered by. Outside the focused window it is reset to the
 	// window's middle.
 	px, py int
+	// The size of the area the windows were last drawn in.
+	width, height int
 	// changed is set when windows opened or closed while the view was open,
 	// so the list is read again on the way back to it.
 	changed bool
@@ -98,6 +100,8 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			ov.move(d[0], d[1])
 		case ev.r >= '0' && ev.r <= '9':
 			ov.typeDigit(ev.r)
+		case ev.r == 'w':
+			m.askLiveWindow()
 		case ev.r == 'o':
 			ov.toggleCenter()
 		case ev.r == 'q':
@@ -466,6 +470,9 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		kind = fmt.Sprintf("around %d: %s", ov.center.Index, clean(ov.center.Name))
 	}
 	right := span{text: fmt.Sprintf("%d windows", len(s.Windows)), style: styleDim}
+	if m.confirm != nil {
+		right = span{text: clean(m.confirm.question) + " (y/n)", style: styleConfirm}
+	}
 	if m.status != "" {
 		right = span{text: clean(m.status), style: styleError}
 	}
@@ -487,6 +494,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		}
 	}
 	ov.cells = overviewLayout(s.Windows, center, width, area)
+	ov.width, ov.height = width, area
 	var panes []*tmux.Pane
 	for _, w := range s.Windows {
 		panes = append(panes, layoutPanes(w)...)
@@ -512,7 +520,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	c.draw(b, 1)
 	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre / uncentre  Enter switch  Esc/q back"})
+		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  w make a live window  Enter switch  Esc/q back"})
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.

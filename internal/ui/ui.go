@@ -146,6 +146,9 @@ func Run(o Options) (*tmux.Target, error) {
 	if o.Inside && tty != "" {
 		m.self, _, _ = m.tmux.PaneByTTY(tty)
 	}
+	if o.Inside {
+		m.splitStartWindow()
+	}
 	if err := m.load(); err != nil {
 		return nil, err
 	}
@@ -212,6 +215,28 @@ func Run(o Options) (*tmux.Target, error) {
 		case <-quit:
 			return nil, nil
 		}
+	}
+}
+
+// splitStartWindow splits the window the selector was started from back into
+// the windows it was made of, if it is a live window (see makeLiveWindow).
+func (m *model) splitStartWindow() {
+	sessions, err := m.tmux.Sessions()
+	if err != nil {
+		return
+	}
+	here, err := m.tmux.Current(m.client)
+	if err != nil {
+		return
+	}
+	if _, here = withoutPane(sessions, m.self, here); here.Window == "" {
+		return
+	}
+	switch split, err := splitLiveWindow(m.tmux, here.Window); {
+	case err != nil:
+		m.status = "could not split the live window: " + err.Error()
+	case split:
+		m.status = "split the live window back into its windows"
 	}
 }
 
@@ -400,6 +425,16 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if ev.key != keyMouse || ev.press {
 		m.status = ""
 	}
+	if c := m.confirm; c != nil {
+		if ev.key == keyMouse && !ev.press {
+			return false, nil, nil
+		}
+		m.confirm = nil
+		if ev.key == keyRune && (ev.r == 'y' || ev.r == 'Y') {
+			return c.action()
+		}
+		return false, nil, nil
+	}
 	if m.overview != nil {
 		return m.overviewKey(ev)
 	}
@@ -412,16 +447,6 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	}
 	if m.menu != nil {
 		return m.menuKey(ev)
-	}
-	if c := m.confirm; c != nil {
-		if ev.key == keyMouse && !ev.press {
-			return false, nil, nil
-		}
-		m.confirm = nil
-		if ev.key == keyRune && (ev.r == 'y' || ev.r == 'Y') {
-			return c.action()
-		}
-		return false, nil, nil
 	}
 	if p := m.input; p != nil {
 		switch ev.key {
@@ -1293,6 +1318,8 @@ var helpText = []string{
 	"| Enter  double-click\tswitch to the window in focus",
 	"| click  wheel\tfocus a window / the next or previous one",
 	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",
+	"| w\tjoin the windows into one live window laid out like this,",
+	"|\tsplit back into them the next time the selector opens there",
 	"| Esc  q\tback to the list",
 	"",
 	"# Mouse",

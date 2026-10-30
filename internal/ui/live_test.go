@@ -338,3 +338,59 @@ func TestOverviewFollowsWindows(t *testing.T) {
 		t.Errorf("overview %v, status %q", m.overview, m.status)
 	}
 }
+
+func TestLiveWindowRoundTrip(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "w0", "-x", "160", "-y", "48")
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "w1")
+	tmuxRun(t, tm, "split-window", "-h", "-d", "-t", "a:w1")
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "w2")
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a") // named automatically
+	before := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_index} #{window_name} #{window_panes} #{window_layout}")
+
+	m := liveModel(t, tm)
+	m.selectRow(t, "a")
+	m.handle(event{key: keyOverview})
+	m.render(160, 50)
+	m.handle(typed('w'))
+	if m.confirm == nil || !strings.Contains(m.confirm.question, "Join the 4 windows of a") {
+		t.Fatalf("confirm = %+v", m.confirm)
+	}
+	done, target, err := m.handle(typed('y'))
+	if !done || err != nil || target == nil {
+		t.Fatalf("makeLiveWindow = %v %+v %v, status %q", done, target, err, m.status)
+	}
+	if m.status != "" {
+		t.Errorf("the overview's layout should apply: %s", m.status)
+	}
+	got := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_id} #{window_name} #{window_panes}")
+	if f := strings.Fields(got); len(f) != 3 || f[1] != "overview" || f[2] != "5" {
+		t.Fatalf("after joining: %q", got)
+	}
+	live := strings.Fields(got)[0]
+
+	// Four windows in a 2x2 overview: four parts of about a quarter each,
+	// w1's two panes side by side in its part.
+	layout, _ := tmux.ParseLayout(tmuxRun(t, tm, "display-message", "-p", "-t", live, "#{window_layout}"))
+	if layout.SideBySide || len(layout.Children) != 2 || !layout.Children[0].SideBySide {
+		t.Errorf("layout = %s", layout)
+	}
+
+	if split, err := splitLiveWindow(tm, live); !split || err != nil {
+		t.Fatalf("splitLiveWindow = %v, %v", split, err)
+	}
+	after := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_index} #{window_name} #{window_panes} #{window_layout}")
+	if after != before {
+		t.Errorf("after splitting:\n%s\nwant\n%s", after, before)
+	}
+	if opt := tmuxRun(t, tm, "show-options", "-wqv", "-t", live, liveOption); opt != "" {
+		t.Errorf("the live window option should be gone, is %q", opt)
+	}
+	// The automatically named window names itself again.
+	if auto := tmuxRun(t, tm, "show-options", "-wqv", "-t", "a:3", "automatic-rename"); auto != "" {
+		t.Errorf("automatic-rename should be inherited again, is %q", auto)
+	}
+	if split, _ := splitLiveWindow(tm, live); split {
+		t.Error("an ordinary window is not split")
+	}
+}

@@ -193,6 +193,12 @@ in order and typing a window's number focuses it; `o` puts the window in focus i
 the centred one to share the screen evenly), `Enter` switches to the window
 in focus, `Esc` or `q` goes back to the list.
 
+`w` in the overview turns it into a **live window**: all the session's windows
+become panes of one tmux window, laid out the way the overview shows them,
+where you can work in all of them at once. Opening the selector again from
+that window splits it back into the original windows, with their numbers,
+names and layouts, before showing the list.
+
 Run outside tmux, it attaches to the selected session.
 
 Like `choose-tree`'s template, `-command` runs any tmux command on the chosen

@@ -353,6 +353,33 @@ content (this applies to the preview too).
 
 If switching fails, the overview closes and the error shows on the list.
 
+#### Live window
+
+`w` in the overview (after a `y/n` question) turns what it shows into a real,
+interactive tmux window: every window of the session becomes panes of the
+window in focus, laid out as the overview draws them.
+
+1. The overview's boxes are cut into nested rows and columns (rows first),
+   which is how tmux layouts are made; each part weighs as much as it spans,
+   so empty ring cells are shared out. Each window's own panes keep their
+   arrangement inside its part (its `window_layout`, resized in proportion).
+2. What each window was is saved in the window option
+   `@tmux-session-selector-overview` (JSON: name, index, layout, panes, active
+   pane, its own `automatic-rename`), before anything changes.
+3. Zoomed windows are unzoomed; every other pane is joined into the window in
+   focus (`join-pane -d`), re-tiling after each so tmux keeps room; then the
+   computed layout is applied with `select-layout` (checksummed as tmux does).
+   If that fails, the tiled layout stays and the prompt line says why.
+4. The window is renamed `overview` and the client switches to it.
+
+When the selector next starts from a live window (it is the client's current
+window, as §5 decides it), it first splits it back: each saved window is
+broken out again (`break-pane -d`) at its old number if free, its other panes
+joined back, and its layout, active pane, name and `automatic-rename`
+restored; the window in focus gets its own back. Panes closed meanwhile are
+skipped; panes added meanwhile stay in it. Then the list opens as usual, with
+a note on the prompt line.
+
 ## 7. Filtering
 
 ### 7.1 Searchable text

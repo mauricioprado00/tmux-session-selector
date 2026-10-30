@@ -42,7 +42,8 @@ type Window struct {
 	// Flags as tmux shows them after the name: * current, - last,
 	// # activity, ! bell, ~ silence, M marked pane, Z zoomed.
 	Flags    string
-	Activity int64 // Unix time of the last activity
+	Activity int64  // Unix time of the last activity
+	Layout   string // as #{window_layout}, for select-layout
 	Panes    []*Pane
 }
 
@@ -162,7 +163,7 @@ var paneFields = []string{
 	"pane_left", "pane_top", "pane_width", "pane_height", "cursor_x", "cursor_y",
 	"window_width", "window_height", "window_zoomed_flag",
 	"window_raw_flags", "pane_marked", "session_activity", "window_activity",
-	"session_group", "session_group_list",
+	"session_group", "session_group_list", "window_layout",
 }
 
 var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
@@ -205,7 +206,7 @@ func ParsePanes(out string) ([]*Session, error) {
 		if w == nil {
 			w = &Window{ID: f[3], Index: atoi(f[4]), Name: f[5], Active: f[6] == "1",
 				Width: atoi(f[19]), Height: atoi(f[20]), Zoomed: f[21] == "1", Flags: f[22],
-				Activity: int64(atoi(f[25]))}
+				Activity: int64(atoi(f[25])), Layout: f[28]}
 			byWindow[f[0]+f[3]] = w
 			s.Windows = append(s.Windows, w)
 		}
