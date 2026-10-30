@@ -45,6 +45,7 @@ func run() int {
 	}
 	client := flag.String("client", "", "tmux client to switch (default: the calling client)")
 	regex := flag.Bool("regex", false, "start in regex mode")
+	normal := flag.Bool("normal", false, "start in normal mode, where keys are commands as in tmux's chooser")
 	noPreview := flag.Bool("no-preview", false, "start with the preview hidden")
 	command := flag.String("command", "", "tmux command to run on the chosen target instead of switching to it;\nthe first %% and every %1 become the target, e.g. \"join-pane -s '%%'\"")
 	sortOrder := flag.String("sort", "index", "sort order: "+strings.Join(ui.SortOrders, ", "))
@@ -84,6 +85,7 @@ func run() int {
 		Reverse:   *reverse,
 		AllGroups: *allGroups,
 		Zoom:      *zoom,
+		Normal:    *normal,
 	})
 	if err == nil && target != nil {
 		err = tm.Attach(*target)

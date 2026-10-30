@@ -45,28 +45,33 @@ type Options struct {
 	// Zoom zooms the pane the selector runs in while it runs, like
 	// choose-tree -Z. It does nothing in a popup.
 	Zoom bool
+	// Normal starts in normal mode instead of search mode.
+	Normal bool
 }
 
 type model struct {
-	tmux      tmux.Tmux
-	client    string
-	inside    bool
-	home      string
-	roots     []*node
-	total     int
-	query     []rune
-	mode      filter.Mode
-	matcher   *filter.Matcher
-	queryErr  string // invalid regex; the last valid result stays shown
-	status    string // error from the last action, cleared on the next key
-	rows      []row
-	matches   int
-	sel       int
-	top       int
-	treeH     int
-	preview   bool
-	help      bool
-	helpTop   int    // first help line shown, when the help is scrolled
+	tmux     tmux.Tmux
+	client   string
+	inside   bool
+	home     string
+	roots    []*node
+	total    int
+	query    []rune
+	mode     filter.Mode
+	matcher  *filter.Matcher
+	queryErr string // invalid regex; the last valid result stays shown
+	status   string // error from the last action, cleared on the next key
+	rows     []row
+	matches  int
+	sel      int
+	top      int
+	treeH    int
+	preview  bool
+	help     bool
+	helpTop  int // first help line shown, when the help is scrolled
+	// normal is normal mode, where keys are commands as in tmux's chooser;
+	// otherwise typing edits the search. Ctrl-/ switches.
+	normal    bool
 	template  string // Options.Command
 	allGroups bool
 	order     int // index into SortOrders
@@ -124,7 +129,7 @@ type hit struct {
 func Run(o Options) (*tmux.Target, error) {
 	home, _ := os.UserHomeDir()
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
-		template: o.Command, allGroups: o.AllGroups}
+		template: o.Command, allGroups: o.AllGroups, normal: o.Normal}
 	if o.Regex {
 		m.mode = filter.Regex
 	}
@@ -385,6 +390,25 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 			return false, nil, nil
 		}
 	}
+	if ev.key == keyToggleMode {
+		m.normal = !m.normal
+		return false, nil, nil
+	}
+	if m.normal {
+		switch ev.key {
+		case keyRune:
+			return m.normalKey(ev.r)
+		case keyAlt:
+			if r := ev.r; r >= 'a' && r <= 'z' {
+				return m.shortcut(10 + int(r-'a'))
+			}
+		case keyClear:
+			m.move(-max(1, m.treeH/2))
+			return false, nil, nil
+		case keyBackspace, keyDeleteWord:
+			return false, nil, nil
+		}
+	}
 	switch ev.key {
 	case keyRune:
 		if len(m.query) == 0 {
@@ -427,6 +451,8 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		m.move(-max(1, m.treeH))
 	case keyPageDown:
 		m.move(max(1, m.treeH))
+	case keyHalfDown:
+		m.move(max(1, m.treeH/2))
 	case keyHome:
 		m.move(-len(m.rows))
 	case keyEnd:
@@ -471,14 +497,87 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	return false, nil, nil
 }
 
-// command runs the tmux chooser command for key r, pressed with Alt.
-func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
-	switch {
-	case r >= '0' && r <= '9':
-		if i := m.top + int(r-'0'); i < len(m.rows) && i < m.top+m.treeH {
-			return m.jump(m.rows[i].n.target())
+// normalKey handles a plain key in normal mode: tmux's chooser keys, which
+// include vim's motions.
+func (m *model) normalKey(r rune) (done bool, target *tmux.Target, err error) {
+	keys := map[rune]key{'j': keyDown, 'k': keyUp, 'l': keyExpand, '+': keyExpand,
+		'h': keyCollapse, '-': keyCollapse, 'g': keyHome, 'G': keyEnd, 'v': keyTogglePreview, '?': keyHelp}
+	if k, ok := keys[r]; ok {
+		return m.handle(event{key: k})
+	}
+	switch r {
+	case 'q':
+		return true, nil, nil
+	case '/', 'f':
+		m.normal = false
+	case 'n':
+		m.nextMatch(1)
+	case 'N':
+		m.nextMatch(-1)
+	case '<':
+		m.winOffset--
+	case '>':
+		m.winOffset++
+	case 'H':
+		return m.command('h')
+	case 't', 'T', 'x', 'X', ':', 'm', 'M', 'o', 'O', 'r':
+		return m.command(r)
+	default:
+		if r >= '0' && r <= '9' {
+			return m.shortcut(int(r - '0'))
 		}
-		return false, nil, nil
+	}
+	return false, nil, nil
+}
+
+// nextMatch moves the selection to the next row, in direction d, that
+// matches the query, wrapping around.
+func (m *model) nextMatch(d int) {
+	for i := 1; i <= len(m.rows); i++ {
+		j := ((m.sel+d*i)%len(m.rows) + len(m.rows)) % len(m.rows)
+		if !m.rows[j].context {
+			m.sel = j
+			return
+		}
+	}
+}
+
+// shortcut jumps to the row labelled with shortcut i on screen.
+func (m *model) shortcut(i int) (done bool, target *tmux.Target, err error) {
+	if idx := m.top + i; i < m.shortcuts() && idx < len(m.rows) && i < m.treeH {
+		return m.jump(m.rows[idx].n.target())
+	}
+	return false, nil, nil
+}
+
+// shortcuts is how many rows, from the top of the tree area, have a shortcut
+// key: 0–9 and M-a…M-z in normal mode, as in tmux, but only Alt-0…Alt-9 in
+// search mode, where Alt-letters are commands.
+func (m *model) shortcuts() int {
+	if m.normal {
+		return 36
+	}
+	return 10
+}
+
+// shortcutLabel is how row i of the tree area is labelled, or "".
+func (m *model) shortcutLabel(i int) string {
+	switch {
+	case i < 0 || i >= m.shortcuts():
+		return ""
+	case !m.normal:
+		return "M-" + strconv.Itoa(i)
+	case i < 10:
+		return strconv.Itoa(i)
+	}
+	return "M-" + string(rune('a'+i-10))
+}
+
+// command runs the tmux chooser command for key r: pressed with Alt in
+// search mode, or as a plain key in normal mode.
+func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
+	if r >= '0' && r <= '9' {
+		return m.shortcut(int(r - '0'))
 	}
 	switch r {
 	case 'o', 'O':
@@ -780,17 +879,17 @@ func flagSpans(flags string) []span {
 	return s
 }
 
-// arrowColumn is the screen column of a row's expand arrow (see rowSpans).
+// gutterWidth is the width of the shortcut label and tag marker before each
+// row (see rowSpans).
+const gutterWidth = 5
+
+// arrowColumn is the screen column of a row's expand arrow (see rowContent).
 func arrowColumn(n *node) int {
 	if n.kind == sessionRow {
-		return 3
+		return gutterWidth + 1
 	}
-	return 5
+	return gutterWidth + 3
 }
-
-// shortcuts is how many rows, from the top of the tree area, get an Alt-digit
-// key that jumps to them.
-const shortcuts = 10
 
 // render draws the whole screen: prompt, tree and, if on, the preview.
 func (m *model) render(width, height int) string {
@@ -847,12 +946,18 @@ func (m *model) render(width, height int) string {
 		m.previewH = previewH
 		m.drawPreview(&b, 2+m.treeH, width, previewH)
 	}
-	drawLine(&b, height-1, width, styleDim, false, span{text: footer})
+	foot := footerSearch
+	if m.normal {
+		foot = footerNormal
+	}
+	drawLine(&b, height-1, width, styleDim, false, span{text: foot})
 	if m.menu != nil {
 		m.menu.draw(&b, width, height)
 	}
-	cursor := m.drawPromptCursor(width)
-	fmt.Fprintf(&b, "\x1b[1;%dH\x1b[?25h", cursor)
+	// Normal mode takes no text, so it shows no cursor.
+	if !m.normal || m.input != nil {
+		fmt.Fprintf(&b, "\x1b[1;%dH\x1b[?25h", m.drawPromptCursor(width))
+	}
 	return b.String()
 }
 
@@ -874,6 +979,9 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 		right = span{text: clean(m.queryErr), style: styleError}
 	}
 	prompt := span{text: "> ", style: styleCurrent}
+	if m.normal {
+		prompt = span{text: "NORMAL ", style: styleNormal}
+	}
 	hint := span{text: query}
 	switch {
 	case m.input != nil:
@@ -881,8 +989,10 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 		hint = span{text: clean(string(m.input.text))}
 	case m.confirm != nil:
 		hint = span{text: clean(m.confirm.question) + " (y/n)", style: styleConfirm}
+	case query == "" && m.normal:
+		hint = span{text: "keys are commands · / or Ctrl-/ to search · ? for help", style: styleDim}
 	case query == "":
-		hint = span{text: "type to filter · ? for help", style: styleDim}
+		hint = span{text: "type to filter · Ctrl-/ for normal mode · ? for help", style: styleDim}
 	}
 	gap := max(2, width-textWidth(prompt.text)-textWidth(hint.text)-textWidth(right.text))
 	drawLine(b, 0, width, "", false, prompt, hint, span{text: strings.Repeat(" ", gap)}, right)
@@ -896,14 +1006,14 @@ func (m *model) drawPromptCursor(width int) int {
 	return min(width, 3+textWidth(string(m.query)))
 }
 
-// rowSpans draws row n, which is on line i of the tree area.
+// rowSpans draws row n, which is on line i of the tree area: its shortcut
+// label, a + if it is tagged, then its content.
 func (m *model) rowSpans(n *node, i int) []span {
-	shortcut := span{text: "  "}
-	if i >= 0 && i < shortcuts {
-		shortcut = span{text: strconv.Itoa(i) + " ", style: styleDim}
+	gutter := []span{{text: fmt.Sprintf("%-*s", gutterWidth-1, m.shortcutLabel(i)), style: styleDim}, {text: " "}}
+	if m.tagged(n) {
+		gutter[1] = span{text: "+", style: styleTagged}
 	}
-	spans := m.rowContent(n)
-	return append([]span{shortcut}, spans...)
+	return append(gutter, m.rowContent(n)...)
 }
 
 func (m *model) rowContent(n *node) []span {
@@ -960,8 +1070,11 @@ func (m *model) rowContent(n *node) []span {
 	}
 }
 
-// footer is the key hint on the bottom line.
-const footer = " Enter jump  ↑↓ move  →← expand/collapse  ^R regex  ^V preview  Esc quit  ? help"
+// footerSearch and footerNormal are the key hints on the bottom line.
+const (
+	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^R regex  ^V preview  Esc quit  ? help"
+	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  / search  ? help  q quit"
+)
 
 // drawHelp draws the help in height rows from screen row y. When it does
 // not fit, it scrolls, and the last row says how.
@@ -987,36 +1100,46 @@ func (m *model) drawHelp(b *strings.Builder, y, width, height int) {
 
 // helpText is shown in place of the tree while help is open.
 var helpText = []string{
-	"  Filter by typing. Every word must match; matching ignores case unless",
-	"  the query has an uppercase letter. Dimmed rows only contain a match.",
+	"  Two modes, switched with Ctrl-/. In SEARCH mode (the default) typing",
+	"  filters the list. In NORMAL mode keys are commands, as in tmux's own",
+	"  chooser, with vim motions.",
 	"",
+	"  Search: every word must match; case is ignored unless the query has an",
+	"  uppercase letter. Dimmed rows only contain a match.",
 	"    api vim       rows with both words, in any field",
 	"    !zsh          rows without zsh",
-	"    s:api         session name contains api",
-	"    w:edit        window name or index contains edit",
-	"    c:vim         pane command contains vim",
-	"    d:www         pane directory contains www",
-	"    !c:zsh        prefixes combine with !",
-	"    /^api-\\d+$/   a regular expression (or Ctrl-R to switch modes)",
+	"    s:api  w:edit  c:vim  d:www   session, window, command, directory",
+	"    /^api-\\d+$/   a regular expression (or Ctrl-R to switch)",
 	"",
-	"  Enter          jump to the selected row",
-	"  Alt-0 … Alt-9  jump to the row with that number on the left",
-	"  Up/Down        move (also Ctrl-P/N, Ctrl-K/J, PgUp/PgDn, Home/End)",
-	"  Right/Left     expand, collapse (also Tab/Shift-Tab)",
-	"  Ctrl-W/Ctrl-U  delete a word, clear the query",
-	"  Ctrl-R         switch between words and regex",
-	"  Ctrl-V         show or hide the preview",
-	"  ? or F1        this help (? only when the query is empty)",
-	"  Alt-x          kill the selected session, window or pane (asks y/n)",
-	"  Alt-t / Alt-T  tag or untag the selected row / untag all; Ctrl-T tags all",
-	"  Alt-m / Alt-M  set / clear tmux's marked pane (for join-pane etc.)",
-	"  Alt-X / Alt-:  kill / run a command (%% is the target) on each tagged",
-	"                 item, or on the selected one if none is tagged",
-	"  Alt-o / Alt-r  sort by index, name or time (recent first); reverse",
-	"  Alt-h          back to the pane the selector was started from",
-	"  Alt-+ / Alt--  expand / collapse everything (Alt-= also expands)",
-	"  < >            scroll the windows of a session preview (empty query)",
-	"  Esc            close (this help, then the selector)",
+	"  Both modes",
+	"    Enter              jump to the selected row",
+	"    Up/Down Ctrl-P/N   move; PgUp/PgDn Ctrl-B/F page; Ctrl-D half page",
+	"    Home/End           first / last row",
+	"    Right/Left Tab     expand / collapse",
+	"    Ctrl-T             tag every match",
+	"    Ctrl-R  Ctrl-V     regex mode; show or hide the preview",
+	"    F1                 this help",
+	"    Esc                close (this help, then the selector)",
+	"",
+	"  Search mode (letters type; tmux's keys with Alt)",
+	"    Alt-0 … Alt-9      jump to the row labelled M-0 … M-9",
+	"    Alt-t Alt-T        tag / untag all      Alt-x Alt-X  kill / kill tagged",
+	"    Alt-:              command for tagged   Alt-m Alt-M  mark / unmark pane",
+	"    Alt-o Alt-r        sort / reverse       Alt-h        back to start pane",
+	"    Alt-+ Alt--        expand / collapse all",
+	"    Ctrl-W Ctrl-U      delete a word / clear the query",
+	"    ?  < >             help; scroll a session preview (empty query only)",
+	"",
+	"  Normal mode (tmux's keys)",
+	"    j k  h l           down / up, collapse / expand (also - +)",
+	"    g G  Ctrl-U/D      first / last, half page up / down",
+	"    0 … 9  M-a … M-z   jump to the row with that label",
+	"    t T  Ctrl-T        tag / untag all / tag all",
+	"    x X  :             kill / kill tagged / command for tagged (%% = item)",
+	"    m M  O r  H        mark / unmark, sort / reverse, back to start pane",
+	"    n N                next / previous match of the search",
+	"    v  < >  ?          preview, scroll a session preview, help",
+	"    / f  q             back to search mode, quit",
 	"",
 	"  Mouse: click selects, double-click jumps, the wheel moves (over a",
 	"  session preview it scrolls the windows), a click on an arrow expands,",

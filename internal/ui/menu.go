@@ -34,6 +34,13 @@ func (m *model) openMenu(x, y int) {
 	command := func(r rune) func() (bool, *tmux.Target, error) {
 		return func() (bool, *tmux.Target, error) { return m.command(r) }
 	}
+	// The key that does the same outside the menu: plain in normal mode.
+	k := func(key string) string {
+		if m.normal {
+			return key
+		}
+		return "M-" + key
+	}
 	expand := menuItem{label: "Expand", key: 'l', hint: "→", action: func() (bool, *tmux.Target, error) {
 		return m.handle(event{key: keyExpand})
 	}}
@@ -42,7 +49,7 @@ func (m *model) openMenu(x, y int) {
 			return m.handle(event{key: keyCollapse})
 		}}
 	}
-	tag := menuItem{label: "Tag", key: 't', hint: "M-t", action: command('t')}
+	tag := menuItem{label: "Tag", key: 't', hint: k("t"), action: command('t')}
 	if m.tagged(n) {
 		tag.label = "Untag"
 	}
@@ -51,16 +58,16 @@ func (m *model) openMenu(x, y int) {
 			return m.jump(n.target())
 		}},
 		expand,
-		{label: "Mark", key: 'm', hint: "M-m", action: command('m')},
+		{label: "Mark", key: 'm', hint: k("m"), action: command('m')},
 		{},
 		tag,
 		{label: "Tag All", key: 'a', hint: "C-t", action: func() (bool, *tmux.Target, error) {
 			return m.handle(event{key: keyTagAll})
 		}},
-		{label: "Tag None", key: 'T', hint: "M-T", action: command('T')},
+		{label: "Tag None", key: 'T', hint: k("T"), action: command('T')},
 		{},
-		{label: "Kill", key: 'x', hint: "M-x", action: command('x')},
-		{label: "Kill Tagged", key: 'X', hint: "M-X", action: command('X')},
+		{label: "Kill", key: 'x', hint: k("x"), action: command('x')},
+		{label: "Kill Tagged", key: 'X', hint: k("X"), action: command('X')},
 		{},
 		{label: "Cancel", key: 'q', hint: "Esc", action: func() (bool, *tmux.Target, error) {
 			return false, nil, nil

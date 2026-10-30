@@ -244,7 +244,7 @@ func TestMouse(t *testing.T) {
 	if m.selected().name != "editor" {
 		t.Errorf("wheel up should move to editor, got %q", m.selected().name)
 	}
-	if click(5, 3); len(m.rows) != 7 {
+	if click(arrowColumn(m.rows[1].n), 3); len(m.rows) != 7 {
 		t.Errorf("click on the arrow should expand editor, rows %q", names(m.rows))
 	}
 	m.lastClickRow = -1
@@ -351,8 +351,8 @@ func TestShortcuts(t *testing.T) {
 	m.render(80, 24)
 	b := &strings.Builder{}
 	drawLine(b, 0, 80, "", false, m.rowSpans(m.rows[2].n, 2)...)
-	if !strings.Contains(b.String(), "2 ") {
-		t.Errorf("row 2 should be labelled 2, got %q", b.String())
+	if !strings.Contains(b.String(), "M-2 ") {
+		t.Errorf("row 2 should be labelled M-2, got %q", b.String())
 	}
 	if done, target, _ := m.handle(alt('3')); !done || target.Session != "$2" || target.Window != "" {
 		t.Errorf("Alt-3 should jump to blog, got %v %+v", done, target)
@@ -438,5 +438,85 @@ func TestHelpScrolls(t *testing.T) {
 	m.handle(typed('a'))
 	if m.help || string(m.query) != "a" {
 		t.Errorf("another key should close the help and type, query %q", string(m.query))
+	}
+}
+
+func TestNormalMode(t *testing.T) {
+	if got := decode([]byte{0x1f, 0x04, 0x02, 0x06}); !reflect.DeepEqual(got,
+		[]event{{key: keyToggleMode}, {key: keyHalfDown}, {key: keyPageUp}, {key: keyPageDown}}) {
+		t.Errorf("decode = %v", got)
+	}
+	m := &model{roots: testTree(), total: 7}
+	m.setQuery()
+	m.render(80, 24)
+	m.handle(event{key: keyToggleMode})
+	if !m.normal {
+		t.Fatal("Ctrl-/ should switch to normal mode")
+	}
+	m.handle(typed('j'))
+	m.handle(typed('j'))
+	m.handle(typed('k'))
+	if m.selected().name != "editor" || len(m.query) != 0 {
+		t.Errorf("j j k should select editor without typing, got %q, query %q", m.selected().name, string(m.query))
+	}
+	m.handle(typed('l'))
+	if len(m.rows) != 7 {
+		t.Errorf("l should expand editor, rows %q", names(m.rows))
+	}
+	m.handle(typed('t'))
+	if len(m.tags) != 1 || m.selected().pane == nil {
+		t.Errorf("t should tag editor and move down, tags %v", m.tags)
+	}
+	m.handle(typed('T'))
+	m.handle(typed('G'))
+	if len(m.tags) != 0 || m.selected().name != "posts" {
+		t.Errorf("T should untag and G go last, tags %v, selected %q", m.tags, m.selected().name)
+	}
+	if done, target, _ := m.handle(typed('3')); !done || target.Pane != "%2" {
+		t.Errorf("3 should jump to the fourth row, got %+v", target)
+	}
+	m.handle(typed('/'))
+	m.handle(typed('z'))
+	if m.normal || string(m.query) != "z" {
+		t.Errorf("/ should return to search mode, query %q", string(m.query))
+	}
+	m.handle(event{key: keyToggleMode})
+	if done, _, _ := m.handle(typed('q')); !done {
+		t.Error("q should quit in normal mode")
+	}
+}
+
+func TestNormalModeShortcutsAndSearch(t *testing.T) {
+	var sessions []*tmux.Session
+	for i := 0; i < 14; i++ {
+		sessions = append(sessions, &tmux.Session{ID: fmt.Sprint("$", i), Name: fmt.Sprint("s", i)})
+	}
+	roots, total := buildTree(sessions, tmux.Location{}, "")
+	m := &model{roots: roots, total: total, normal: true}
+	m.setQuery()
+	m.render(80, 30)
+	if got := m.shortcutLabel(11); got != "M-b" {
+		t.Errorf("label 11 = %q, want M-b", got)
+	}
+	if _, target, _ := m.handle(alt('b')); target == nil || target.Session != "$11" {
+		t.Errorf("Alt-b should jump to row 11, got %+v", target)
+	}
+	m.normal = false
+	if got := m.shortcutLabel(11); got != "" {
+		t.Errorf("search mode has only ten shortcuts, label 11 = %q", got)
+	}
+	typeText(m, "s1")
+	m.normal = true
+	m.sel = 0
+	m.handle(typed('n'))
+	m.handle(typed('n'))
+	if m.selected().name != "s11" {
+		t.Errorf("n n from s1 should reach s11, got %q", m.selected().name)
+	}
+	for i := 0; i < 3; i++ {
+		m.handle(typed('N'))
+	}
+	if m.selected().name != "s13" {
+		t.Errorf("N should wrap backwards to s13, got %q", m.selected().name)
 	}
 }

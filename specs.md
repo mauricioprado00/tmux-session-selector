@@ -194,14 +194,17 @@ Modelled on tmux's own `choose-tree` preview:
 | `Left` / `Shift-Tab` | collapse the selected row (or move to its parent) |
 | `Ctrl-R` | toggle between `words` and `regex` mode |
 | `Ctrl-V` | toggle the preview |
+| `Ctrl-/` | switch between search and normal mode (§6.8) |
+| `Ctrl-B` / `Ctrl-F`, `Ctrl-D` | page up / down, half a page down |
 | `?` (empty query) / `F1` | open the help panel |
 | `<` / `>` (empty query) | scroll the windows of a session preview |
 | `Enter` | jump to the selected target and exit |
 | `Esc` / `Ctrl-C` / `Ctrl-G` | exit without changing anything |
 
-Letters are always query input, never commands, so typing never triggers an
-action by accident. `?` opens help only when the query is empty; anywhere
-else it is query text; the same holds for `<` and `>`.
+In search mode letters are always query input, never commands, so typing
+never triggers an action by accident. `?` opens help only when the query is
+empty; anywhere else it is query text; the same holds for `<` and `>`. In
+normal mode (§6.8) letters are commands.
 
 ### 6.6 Mouse
 
@@ -233,15 +236,16 @@ tmux 3.4, in both a window and a `display-popup`).
 
 ### 6.7 Commands
 
-The commands of tmux's chooser (`choose-tree`) are available on the same
-letters pressed with **Alt**, since plain letters and digits are query text.
-A terminal sends Alt-x as `ESC x`; `ESC O` not followed by a known SS3 key is
-Alt-O.
+The commands of tmux's chooser (`choose-tree`) are available in both modes
+(§6.8): in search mode on the same letters pressed with **Alt**, since plain
+letters and digits are query text; in normal mode on tmux's plain keys. The
+table gives the search-mode key. A terminal sends Alt-x as `ESC x`; `ESC O`
+not followed by a known SS3 key is Alt-O.
 
 | Key | tmux | Action |
 |---|---|---|
 | `Alt-x` | `x` | Kill the selected session, window or pane, after a `y/n` question on the prompt line (`kill-session`, `kill-window` or `kill-pane`). The tree is reloaded and the selection stays at the same position. |
-| `Alt-t` | `t` | Tag or untag the selected row, then move down. Tagged rows are shown in bold magenta and the prompt line counts them. Tags are kept by target, so they survive reloads. |
+| `Alt-t` | `t` | Tag or untag the selected row, then move down. Tagged rows are shown in bold magenta with a `+` in the gutter, and the prompt line counts them. Tags are kept by target, so they survive reloads. |
 | `Alt-T` | `T` | Untag everything. |
 | `Ctrl-T` | `C-t` | Tag every row that matches the query (context rows are not tagged). |
 | `Alt-m` | `m` | Make the selected pane (the active pane of a selected window or session) tmux's marked pane (`select-pane -m`), the default source for `join-pane`, `swap-pane` and `move-pane`. The tree reloads so the `M` flags update. |
@@ -251,10 +255,47 @@ Alt-O.
 | `Alt-o` (or `Alt-O`) | `O` | Change the sort order: index → name → time (§5). |
 | `Alt-r` | `r` | Reverse the sort order. |
 | `Alt-h` (or `Alt-H`) | `H` | Select the pane the selector was started from, expanding its window, and clearing the query if it hides that pane. Does nothing outside tmux. |
-| `Alt-0` … `Alt-9` | `0` … `9` | Jump straight to the row labelled with that digit. The labels are a dim gutter on the left of the first ten rows on screen (tmux numbers from the top of the whole list and continues with `M-a`…, but Alt-letters are the commands here). After filtering, `Alt-0` is the first row shown. |
+| `Alt-0` … `Alt-9` | `0` … `9` | Jump straight to the row with that label. Labels are a dim gutter on the left of the rows on screen, numbered from the top of the tree area (tmux numbers from the top of the whole list), so after filtering the first label is the first row shown. Search mode labels ten rows `M-0` … `M-9`; normal mode labels 36, `0` … `9` then `M-a` … `M-z`, as tmux does. |
 | `Alt-+` (or `Alt-=`) / `Alt--` | `M-+` / `M--` | Expand / collapse every session and window. The selection moves to the nearest visible ancestor if it is hidden. |
 
 While a question is shown, `y` or `Y` confirms and any other key cancels.
+
+### 6.8 Modes
+
+There are two modes, switched with `Ctrl-/` (terminals send it as `0x1f`, the
+same byte as `Ctrl-_`).
+
+- **Search mode** (the default): typing edits the query, which filters the
+  list as described in §7; tmux's commands are on Alt (§6.7).
+- **Normal mode**, named after vim's: keys are commands, as in tmux's own
+  chooser, with vim's motions. The query keeps filtering but cannot be
+  edited; the prompt line shows `NORMAL` and no cursor, and the footer lists
+  normal-mode keys. `--normal` starts in it.
+
+| Normal-mode key | Action |
+|---|---|
+| `j` / `k` | down / up |
+| `h` / `l` (or `-` / `+`) | collapse / expand |
+| `g` / `G` | first / last row |
+| `Ctrl-U` / `Ctrl-D` | half a page up / down |
+| `0` … `9`, `M-a` … `M-z` | jump to the row with that label |
+| `t` / `T` / `Ctrl-T` | tag / untag all / tag every match |
+| `x` / `X` / `:` | kill / kill tagged / command for tagged |
+| `m` / `M` | mark / unmark the pane |
+| `O` (or `o`) / `r` | change sort order / reverse |
+| `H` | back to the starting pane |
+| `n` / `N` | next / previous row matching the query, wrapping around |
+| `v` | show or hide the preview |
+| `<` / `>` | scroll a session preview |
+| `?` | help |
+| `/` or `f` | back to search mode (tmux's `f` is its filter) |
+| `q` | quit |
+
+Keys that are not letters work the same in both modes (arrows, `Enter`,
+`Esc`, `Ctrl-T`, `Ctrl-R`, `Ctrl-V`, `Ctrl-B` / `Ctrl-F` page, `Ctrl-D` half
+page, Alt-+ / Alt--), except that in normal mode `Ctrl-U` is half a page up
+instead of clearing the query, and `Backspace` / `Ctrl-W` do nothing. The
+right-click menu shows the key of the current mode for each item.
 
 ## 7. Filtering
 
@@ -390,6 +431,7 @@ tmux-session-selector [flags] [initial query]
 
   --client NAME   tmux client to switch (default: the calling client)
   --regex         start in regex mode
+  --normal        start in normal mode (§6.8)
   --no-preview    start with the preview hidden
   --refresh DUR   how often the preview updates (default 250ms; 0 for a
                   single snapshot)

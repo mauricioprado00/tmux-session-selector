@@ -29,6 +29,8 @@ const (
 	keyMouse
 	keyAlt
 	keyTagAll
+	keyToggleMode
+	keyHalfDown
 )
 
 type event struct {
@@ -55,6 +57,10 @@ var ctrlKeys = map[byte]key{
 	0x12: keyToggleRegex,   // Ctrl-R
 	0x16: keyTogglePreview, // Ctrl-V
 	0x14: keyTagAll,        // Ctrl-T
+	0x1f: keyToggleMode,    // Ctrl-/ (and Ctrl-_)
+	0x02: keyPageUp,        // Ctrl-B
+	0x06: keyPageDown,      // Ctrl-F
+	0x04: keyHalfDown,      // Ctrl-D
 	0x03: keyCancel,        // Ctrl-C
 	0x07: keyCancel,        // Ctrl-G
 }

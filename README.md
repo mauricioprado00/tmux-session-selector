@@ -98,17 +98,27 @@ activity, `!` bell (in red), `~` silence, `M` marked pane, `Z` zoomed.
 | `Backspace`, `Ctrl-W`, `Ctrl-U` | delete a character, a word, everything |
 | `Ctrl-R` | switch between words and regex mode |
 | `Ctrl-V` | show or hide the pane preview |
+| `Ctrl-/` | switch between search and normal mode |
 | `?` (empty query), `F1` | help panel with the query syntax and keys |
 | `<` / `>` (empty query) | scroll the windows of a session preview |
 | `Enter` | jump |
 | `Esc`, `Ctrl-C`, `Ctrl-G` | cancel |
 
-The commands of tmux's own chooser work on the same letters with **Alt**
-(plain letters are query text):
+### Two modes
+
+`Ctrl-/` switches between **search mode**, the default, where typing filters,
+and **normal mode** (as in vim), where keys are commands, as in tmux's own
+chooser: `j`/`k` move, `h`/`l` collapse/expand, `g`/`G` first/last, `0`–`9`
+and `M-a`…`M-z` jump to a labelled row, `t`/`T` tag, `x`/`X` kill, `:` runs a
+command, `m`/`M` mark, `O`/`r` sort, `H` back to the start pane, `n`/`N` next
+match, `v` preview, `/` back to search, `q` quit. Start in normal mode with
+`-normal`.
+
+In search mode the same commands are on the letters with **Alt**:
 
 | Key | Action |
 |---|---|
-| `Alt-0` … `Alt-9` | jump to the row with that number on the left |
+| `Alt-0` … `Alt-9` | jump to the row labelled `M-0` … `M-9` on the left |
 | `Alt-x` | kill the selected session, window or pane (asks y/n) |
 | `Alt-t` / `Alt-T` / `Ctrl-T` | tag or untag the selected row / untag all / tag every match |
 | `Alt-m` / `Alt-M` | set / clear tmux's marked pane |
@@ -126,6 +136,7 @@ tmux-session-selector [flags] [initial query]
 
   -client NAME   tmux client to switch (default: the calling client)
   -regex         start in regex mode
+  -normal        start in normal mode (keys are commands, as in tmux's chooser)
   -no-preview    start with the preview hidden
   -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot)
   -command CMD   run a tmux command on the chosen target instead of switching
