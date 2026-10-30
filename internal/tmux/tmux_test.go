@@ -34,11 +34,12 @@ func TestSplitFields(t *testing.T) {
 
 func TestParsePanes(t *testing.T) {
 	line := func(f ...string) string { return strings.Join(f, `\037`) }
+	geometry := line("0", "0", "80", "24", "1", "2", "80", "24", "0")
 	out := strings.Join([]string{
-		line("$1", "api", "1", "@2", "2", "server", "0", "%5", "0", "1", "go", "/srv", "host"),
-		line("$1", "api", "1", "@1", "1", "editor", "1", "%3", "1", "1", "nvim", "/srv", "host"),
-		line("$1", "api", "1", "@1", "1", "editor", "1", "%2", "0", "0", "zsh", "/srv", "host"),
-		line("$2", `a\\b c`, "0", "@1", "0", "editor", "1", "%2", "0", "1", "zsh", "/", "host"),
+		line("$1", "api", "1", "@2", "2", "server", "0", "%5", "0", "1", "go", "/srv", "host", geometry),
+		line("$1", "api", "1", "@1", "1", "editor", "1", "%3", "1", "1", "nvim", "/srv", "host", geometry),
+		line("$1", "api", "1", "@1", "1", "editor", "1", "%2", "0", "0", "zsh", "/srv", "host", geometry),
+		line("$2", `a\\b c`, "0", "@1", "0", "editor", "1", "%2", "0", "1", "zsh", "/", "host", geometry),
 	}, "\n") + "\n"
 	sessions, err := ParsePanes(out)
 	if err != nil {
@@ -166,4 +167,30 @@ func attach(t *testing.T, tm Tmux, session string) string {
 	}
 	t.Fatal("test client did not attach")
 	return ""
+}
+
+func TestCapture(t *testing.T) {
+	tm := server(t)
+	p0 := mustRun(t, tm, "new-session", "-d", "-P", "-F", "#{pane_id}", "-x", "80", "-y", "24",
+		"printf '\\033[31mred\\033[0m\\n'; sleep 30")
+	p1 := mustRun(t, tm, "split-window", "-d", "-P", "-F", "#{pane_id}", "echo plain; sleep 30")
+	time.Sleep(300 * time.Millisecond)
+	screens, err := tm.Capture(p0, p1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := screens[p0]; !strings.Contains(s.Text, "\x1b[31mred") || strings.Contains(s.Text, "plain") || s.CursorY != 1 {
+		t.Errorf("pane %s = %+v", p0, s)
+	}
+	if s := screens[p1]; !strings.HasPrefix(s.Text, "plain\n") || s.CursorY != 1 || s.CursorX != 0 {
+		t.Errorf("pane %s = %+v", p1, s)
+	}
+	sessions, err := tm.Sessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := sessions[0].Windows[0]
+	if w.Width != 80 || w.Height != 24 || w.Panes[0].Height+w.Panes[1].Height != 23 {
+		t.Errorf("geometry: window %dx%d, panes %+v %+v", w.Width, w.Height, *w.Panes[0], *w.Panes[1])
+	}
 }

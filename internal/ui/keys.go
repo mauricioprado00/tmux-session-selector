@@ -1,6 +1,10 @@
 package ui
 
-import "unicode/utf8"
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
 
 type key int
 
@@ -20,12 +24,19 @@ const (
 	keyCollapse
 	keyToggleRegex
 	keyTogglePreview
+	keyHelp
 	keyCancel
+	keyMouse
 )
 
 type event struct {
 	key key
 	r   rune // for keyRune
+	// For keyMouse: the SGR button code (0 left, 64/65 wheel, plus modifier
+	// bits), the 0-based cell, and whether it is a press or a release.
+	button int
+	x, y   int
+	press  bool
 }
 
 var ctrlKeys = map[byte]key{
@@ -54,14 +65,16 @@ var csiKeys = map[byte]key{
 	'H': keyHome,
 	'F': keyEnd,
 	'Z': keyCollapse, // Shift-Tab
+	'P': keyHelp,     // F1
 }
 
 // tildeKeys maps the first parameter of an ESC [ n ~ sequence.
 var tildeKeys = map[string]key{
 	"1": keyHome, "7": keyHome,
 	"4": keyEnd, "8": keyEnd,
-	"5": keyPageUp,
-	"6": keyPageDown,
+	"5":  keyPageUp,
+	"6":  keyPageDown,
+	"11": keyHelp, // F1
 }
 
 // decode turns bytes read from the terminal into key events. A lone ESC at
@@ -73,9 +86,9 @@ func decode(b []byte) []event {
 		c := b[0]
 		switch {
 		case c == 0x1b:
-			k, n := escape(b)
-			if k >= 0 {
-				evs = append(evs, event{key: k})
+			ev, n := escape(b)
+			if ev.key >= 0 {
+				evs = append(evs, ev)
 			}
 			b = b[n:]
 		case c < 0x20 || c == 0x7f:
@@ -95,41 +108,57 @@ func decode(b []byte) []event {
 }
 
 // escape decodes the sequence at the start of b, which begins with ESC. It
-// returns the key, or -1 if unknown, and the number of bytes used.
-func escape(b []byte) (key, int) {
+// returns the event, with key -1 if unknown, and the number of bytes used.
+func escape(b []byte) (event, int) {
+	unknown := event{key: -1}
 	if len(b) < 2 || (b[1] != '[' && b[1] != 'O') {
-		return keyCancel, 1
+		return event{key: keyCancel}, 1
 	}
 	if b[1] == 'O' {
 		if len(b) < 3 {
-			return -1, len(b)
+			return unknown, len(b)
 		}
 		if k, ok := csiKeys[b[2]]; ok {
-			return k, 3
+			return event{key: k}, 3
 		}
-		return -1, 3
+		return unknown, 3
 	}
 	// CSI: parameter and intermediate bytes, then a final byte in 0x40–0x7e.
 	for i := 2; i < len(b); i++ {
-		if b[i] >= 0x40 && b[i] <= 0x7e {
-			if b[i] == '~' {
-				params := string(b[2:i])
-				for j := 0; j < len(params); j++ {
-					if params[j] == ';' {
-						params = params[:j]
-						break
-					}
-				}
-				if k, ok := tildeKeys[params]; ok {
-					return k, i + 1
-				}
-				return -1, i + 1
-			}
-			if k, ok := csiKeys[b[i]]; ok {
-				return k, i + 1
-			}
-			return -1, i + 1
+		if b[i] < 0x40 || b[i] > 0x7e {
+			continue
 		}
+		params := string(b[2:i])
+		switch {
+		case strings.HasPrefix(params, "<") && (b[i] == 'M' || b[i] == 'm'):
+			return mouse(params[1:], b[i] == 'M'), i + 1
+		case b[i] == '~':
+			first, _, _ := strings.Cut(params, ";")
+			if k, ok := tildeKeys[first]; ok {
+				return event{key: k}, i + 1
+			}
+		default:
+			if k, ok := csiKeys[b[i]]; ok {
+				return event{key: k}, i + 1
+			}
+		}
+		return unknown, i + 1
 	}
-	return -1, len(b)
+	return unknown, len(b)
+}
+
+// mouse decodes the parameters of an SGR mouse report, "button;x;y" with
+// 1-based coordinates.
+func mouse(params string, press bool) event {
+	f := strings.Split(params, ";")
+	if len(f) != 3 {
+		return event{key: -1}
+	}
+	button, err1 := strconv.Atoi(f[0])
+	x, err2 := strconv.Atoi(f[1])
+	y, err3 := strconv.Atoi(f[2])
+	if err1 != nil || err2 != nil || err3 != nil {
+		return event{key: -1}
+	}
+	return event{key: keyMouse, button: button, x: x - 1, y: y - 1, press: press}
 }

@@ -16,7 +16,7 @@ type terminal struct {
 }
 
 // openTerminal puts /dev/tty in raw mode and, when alt is set, switches to
-// the alternate screen.
+// the alternate screen and turns on mouse reporting.
 func openTerminal(alt bool) (*terminal, error) {
 	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -41,7 +41,8 @@ func openTerminal(alt bool) (*terminal, error) {
 		return nil, err
 	}
 	if alt {
-		f.WriteString("\x1b[?1049h")
+		// Alternate screen, and mouse button reports in SGR format.
+		f.WriteString("\x1b[?1049h\x1b[?1000h\x1b[?1006h")
 	}
 	return t, nil
 }
@@ -51,7 +52,7 @@ func (t *terminal) restore() {
 	t.once.Do(func() {
 		s := "\x1b[0m\x1b[?25h"
 		if t.alt {
-			s += "\x1b[?1049l"
+			s += "\x1b[?1006l\x1b[?1000l\x1b[?1049l"
 		}
 		t.f.WriteString(s)
 		ioctl(t.f.Fd(), ioctlSetTermios, unsafe.Pointer(&t.orig))

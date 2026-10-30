@@ -60,7 +60,18 @@ Reload with `tmux source-file ~/.tmux.conf`.
 ## Use
 
 Type to filter. `Enter` jumps to the selected session, window or pane; `Esc`
-closes without changing anything.
+closes without changing anything. The bottom line lists the main keys; `?` opens a
+help panel.
+
+The preview below the list draws the selected window's panes in their real
+layout and colours, or a session's windows side by side, like tmux's own
+chooser. Unlike tmux's snapshot, it is live: output arriving in a pane shows
+while you choose.
+
+With tmux's `mouse` option on, the mouse works too: click selects, double-click
+jumps, the wheel moves, and clicking a pane or window in the preview jumps
+there. When a session has more windows than fit, its preview scrolls like
+tmux's: click the `<` / `>` arrows or use the wheel over it.
 
 | Query | Shows |
 |---|---|
@@ -83,6 +94,8 @@ dimmed does not match itself; it is there because something inside it does.
 | `Backspace`, `Ctrl-W`, `Ctrl-U` | delete a character, a word, everything |
 | `Ctrl-R` | switch between words and regex mode |
 | `Ctrl-V` | show or hide the pane preview |
+| `?` (empty query), `F1` | help panel with the query syntax and keys |
+| `<` / `>` (empty query) | scroll the windows of a session preview |
 | `Enter` | jump |
 | `Esc`, `Ctrl-C`, `Ctrl-G` | cancel |
 
@@ -94,6 +107,7 @@ tmux-session-selector [flags] [initial query]
   -client NAME   tmux client to switch (default: the calling client)
   -regex         start in regex mode
   -no-preview    start with the preview hidden
+  -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot)
   -version       print the version and exit
 ```
 

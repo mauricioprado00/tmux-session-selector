@@ -14,8 +14,8 @@ func TestDecode(t *testing.T) {
 		in   string
 		want []event
 	}{
-		{"ab", []event{{keyRune, 'a'}, {keyRune, 'b'}}},
-		{"é", []event{{keyRune, 'é'}}},
+		{"ab", []event{{key: keyRune, r: 'a'}, {key: keyRune, r: 'b'}}},
+		{"é", []event{{key: keyRune, r: 'é'}}},
 		{"\r", []event{{key: keyEnter}}},
 		{"\n", []event{{key: keyDown}}},
 		{"\x1b", []event{{key: keyCancel}}},
@@ -24,7 +24,7 @@ func TestDecode(t *testing.T) {
 		{"\x1b[Z", []event{{key: keyCollapse}}},
 		{"\x1b[5~\x1b[6~", []event{{key: keyPageUp}, {key: keyPageDown}}},
 		{"\x1b[1~\x1b[4~\x1b[H\x1b[F", []event{{key: keyHome}, {key: keyEnd}, {key: keyHome}, {key: keyEnd}}},
-		{"\x1b[2~x", []event{{keyRune, 'x'}}}, // Insert is ignored
+		{"\x1b[2~x", []event{{key: keyRune, r: 'x'}}}, // Insert is ignored
 		{"\x7f\x17\x15\x12\x16\x07", []event{{key: keyBackspace}, {key: keyDeleteWord}, {key: keyClear},
 			{key: keyToggleRegex}, {key: keyTogglePreview}, {key: keyCancel}}},
 	}
@@ -198,12 +198,67 @@ func BenchmarkKeystroke(b *testing.B) {
 		sessions = append(sessions, sess)
 	}
 	roots, total := buildTree(sessions, tmux.Location{}, "/home/me")
-	m := &model{roots: roots, total: total, captures: map[string]capture{}}
+	m := &model{roots: roots, total: total, screens: map[string]screen{}}
 	m.setQuery()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		m.query = []rune("xx src vim")[:1+i%10]
 		m.setQuery()
 		m.render(200, 60)
+	}
+}
+
+func TestDecodeMouse(t *testing.T) {
+	got := decode([]byte("\x1b[<0;5;3M\x1b[<0;5;3m\x1b[<65;1;1M\x1b[<0;5Mz"))
+	want := []event{
+		{key: keyMouse, button: 0, x: 4, y: 2, press: true},
+		{key: keyMouse, button: 0, x: 4, y: 2},
+		{key: keyMouse, button: 65, press: true},
+		{key: keyRune, r: 'z'},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("decode = %+v\nwant %+v", got, want)
+	}
+}
+
+func TestMouse(t *testing.T) {
+	// Pane contents are filled in so rendering never runs tmux.
+	m := &model{roots: testTree(), total: 7, preview: true, screens: map[string]screen{
+		"%1": {}, "%2": {}, "%3": {}, "%4": {},
+	}}
+	m.setQuery()
+	m.render(80, 24) // tree on screen rows 2–10, preview on 11–22, footer on 23
+	click := func(x, y int) (bool, *tmux.Target) {
+		done, target, _ := m.handle(event{key: keyMouse, x: x, y: y, press: true})
+		m.handle(event{key: keyMouse, x: x, y: y})
+		return done, target
+	}
+
+	if done, _ := click(10, 4); done || m.selected().name != "server" {
+		t.Fatalf("click should select server, got %q", m.selected().name)
+	}
+	m.handle(event{key: keyMouse, button: 64, press: true})
+	if m.selected().name != "editor" {
+		t.Errorf("wheel up should move to editor, got %q", m.selected().name)
+	}
+	if click(3, 3); len(m.rows) != 7 {
+		t.Errorf("click on the arrow should expand editor, rows %q", names(m.rows))
+	}
+	m.lastClickRow = -1
+	click(10, 5) // %2
+	done, target := click(10, 5)
+	if !done || target == nil || target.Pane != "%2" {
+		t.Errorf("double click should jump to %%2, got %v %+v", done, target)
+	}
+
+	m.hits = []hit{{x0: 0, y0: 15, x1: 9, y1: 20, target: tmux.Target{Session: "$2", Window: "@3"}}}
+	if done, target := click(5, 16); !done || target.Window != "@3" {
+		t.Errorf("click in the preview should jump to its window, got %+v", target)
+	}
+	if click(5, 23); !m.help {
+		t.Error("click on the footer should open help")
+	}
+	if click(5, 5); m.help || m.selected().pane == nil || m.selected().pane.ID != "%2" {
+		t.Error("a click while help is open should only close it")
 	}
 }

@@ -57,8 +57,10 @@ backslash as `\\`, so the parser decodes those escapes while splitting. A raw
 | Level | Fields |
 |---|---|
 | Session | `session_id`, `session_name`, `session_attached` |
-| Window | `window_id`, `window_index`, `window_name`, `window_active` |
-| Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title` |
+| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag` |
+| Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y` |
+
+The geometry and cursor fields are only used to draw the preview (§6.4).
 
 The current location (`client_name`, `session_id`, `window_id`, `pane_id`) is
 read with `display-message -p` for the calling client, or from `list-clients`
@@ -83,12 +85,15 @@ single pane do not show a pane row; the window row stands for that pane.
        %5  zsh        ~/www/api
      2: server        go          ~/www/api
  ▸ blog  (2 windows)
- ──────────────────────────────────────────────────────────────────
- <preview of the selected pane>
+┌─ %4 nvim ───────────────────┬─ %5 zsh ─────────────────────────┐
+│<pane content, in colour>    │<pane content>                    │
+└─────────────────────────────┴──────────────────────────────────┘
+ Enter jump  ↑↓ move  →← expand/collapse  ^R regex  ^V preview  Esc quit  ? help
 ```
 
 - **Prompt line**: the query, the matching mode (`words` or `regex`), and the
-  count of matching rows against the total.
+  count of matching rows against the total. While the query is empty it shows
+  a dimmed hint, `type to filter · ? for help`.
 - **Tree**: one row per session, window and pane.
   - Session row: name, window count, `attached` when a client is attached.
   - Window row: `index: name`; for single-pane windows also the command and
@@ -99,20 +104,60 @@ single pane do not show a pane row; the window row stands for that pane.
   - Rows shown only as context for a match (see §7.4) are dimmed; the matched
     text is highlighted.
 - **Preview** (toggle, on by default when the terminal has at least 30 lines):
-  the visible content of the selected pane, from
-  `tmux capture-pane -p -t <pane_id>`. For a session or window row, the
-  preview shows that row's active pane. Plain text in v1; colours may come
-  later.
+  the lower half of the screen; see §6.4.
+- **Footer**: the bottom line always lists the main keys and `? help`, so every
+  shortcut can be found without reading documentation.
 - Long rows are truncated with `…`; the screen never wraps.
 - The UI redraws on terminal resize (`SIGWINCH`).
 
-### 6.2 Initial state
+### 6.2 Help panel
+
+`?` (while the query is empty) or `F1` replaces the tree and preview with a
+help panel: the query syntax (words, `!`, `s:`, `w:`, `c:`, `d:`, `/regex/`,
+smart case) and every key binding. Any key closes it; keys other than `Esc`,
+`Enter` and `F1` also take effect, so typing goes straight into the query.
+`F1` alone is not enough because some terminals (GNOME Terminal) keep it for
+their own help. The same query syntax is printed by `--help`.
+
+### 6.3 Initial state
 
 - Query empty, all sessions expanded to window level, the current window
   selected.
 - Mode `words`.
 
-### 6.3 Key bindings
+### 6.4 Preview
+
+Modelled on tmux's own `choose-tree` preview:
+
+- **Pane row**: that pane, framed, using the whole preview area.
+- **Window row**: every pane of the window in its real layout, scaled to the
+  preview area, with box-drawn borders that meet in proper junctions. Each pane
+  is labelled with its id and command on its top border; the active pane's
+  border is green. A zoomed window shows only its zoomed pane.
+- **Session row**: the session's windows side by side, each drawn with its own
+  layout and labelled `index: name`; the active window's frame is green. When
+  the windows do not fit at 24 columns each (tmux's own threshold), the
+  preview shows as many as fit at that width and scrolls, as in tmux:
+  framed `<` / `>` arrow columns at the edges mark hidden windows, and a newly
+  shown session starts with its active window in the middle. Clicking an arrow,
+  the mouse wheel over the preview, or `<` / `>` on an empty query scroll by
+  one window. Only the windows on screen are captured.
+- Content keeps its colours and attributes: it is read with
+  `capture-pane -p -e` and its SGR sequences are parsed into per-cell styles
+  (other escape sequences are dropped).
+- A pane larger than its box shows its top-left part, scrolled just enough to
+  keep the cursor visible, as tmux does.
+- All panes needed for one preview are captured in a single tmux invocation
+  (`capture-pane … ; display-message <marker> <cursor> ; …`); the marker line
+  also carries each pane's current cursor position.
+- **Live**: unlike tmux's snapshot, the preview is captured again every 250 ms
+  (`--refresh`), so output arriving in a pane shows while you choose. Only the
+  panes on screen are captured, in one tmux call per tick, and nothing is
+  captured while the preview is hidden or help is open. `--refresh 0` keeps
+  the first capture of each pane for the whole run. Pane layout is read once
+  at start-up; only content and cursor are live.
+
+### 6.5 Key bindings
 
 | Key | Action |
 |---|---|
@@ -128,11 +173,33 @@ single pane do not show a pane row; the window row stands for that pane.
 | `Left` / `Shift-Tab` | collapse the selected row (or move to its parent) |
 | `Ctrl-R` | toggle between `words` and `regex` mode |
 | `Ctrl-V` | toggle the preview |
+| `?` (empty query) / `F1` | open the help panel |
+| `<` / `>` (empty query) | scroll the windows of a session preview |
 | `Enter` | jump to the selected target and exit |
 | `Esc` / `Ctrl-C` / `Ctrl-G` | exit without changing anything |
 
 Letters are always query input, never commands, so typing never triggers an
-action by accident. Mouse support is out of scope for v1.
+action by accident. `?` opens help only when the query is empty; anywhere
+else it is query text; the same holds for `<` and `>`.
+
+### 6.6 Mouse
+
+The program turns on mouse reporting (`?1000h`, SGR format `?1006h`) and
+turns it off on exit. It behaves like tmux's chooser:
+
+| Action | Effect |
+|---|---|
+| click a row | select it |
+| double-click a row (within 400 ms) | jump to it, like `Enter` |
+| click a `▸` / `▾` arrow | expand or collapse the row (empty query only) |
+| wheel | move the selection; over a session preview, scroll its windows |
+| click a pane box in a window preview, or a window box in a session preview | jump to that pane or window |
+| click a `<` / `>` arrow of a session preview | scroll its windows by one |
+| click the footer | open the help panel |
+
+Modifier keys are ignored; other buttons do nothing. In a popup or pane,
+tmux forwards mouse events only when its `mouse` option is on (checked with
+tmux 3.4, in both a window and a `display-popup`).
 
 ## 7. Filtering
 
@@ -253,6 +320,8 @@ tmux-session-selector [flags] [initial query]
   --client NAME   tmux client to switch (default: the calling client)
   --regex         start in regex mode
   --no-preview    start with the preview hidden
+  --refresh DUR   how often the preview updates (default 250ms; 0 for a
+                  single snapshot)
   --version       print the version and exit
   --help          print usage and exit
 ```
@@ -354,7 +423,5 @@ or `go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session
 
 - Kill the selected session, window or pane (with an in-UI `y/n` confirmation).
 - Rename from the list.
-- Coloured preview (`capture-pane -e`).
 - Sort by recent activity instead of by name.
-- Mouse selection.
 - Remember the last query between runs.

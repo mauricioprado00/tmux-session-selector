@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 	"unicode"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/filter"
@@ -25,11 +26,9 @@ type Options struct {
 	Query     string
 	Regex     bool
 	NoPreview bool
-}
-
-type capture struct {
-	lines []string
-	err   error
+	// Refresh is how often the preview is captured again; 0 keeps the
+	// first capture of each pane for the whole run.
+	Refresh time.Duration
 }
 
 type model struct {
@@ -50,7 +49,30 @@ type model struct {
 	top      int
 	treeH    int
 	preview  bool
-	captures map[string]capture
+	help     bool
+	screens  map[string]screen
+	height   int   // screen height at the last render
+	previewY int   // screen row where the preview starts
+	previewH int   // preview height at the last render; 0 when not shown
+	hits     []hit // clickable boxes of the preview
+	// The first window shown in a session preview, and for which session.
+	winOffset    int
+	winOffsetFor *tmux.Session
+	// The last left click, to detect a double click.
+	lastClickRow int
+	lastClickAt  time.Time
+}
+
+// doubleClick is the longest gap between the clicks of a double click.
+const doubleClick = 400 * time.Millisecond
+
+// hit is a box of the preview that, when clicked, jumps to target or, for a
+// scroll arrow, scrolls a session preview by scroll windows. Coordinates are
+// 0-based screen cells, inclusive.
+type hit struct {
+	x0, y0, x1, y1 int
+	target         tmux.Target
+	scroll         int
 }
 
 // Run shows the selector until the user picks a row or cancels. Inside tmux it
@@ -93,6 +115,12 @@ func Run(o Options) (*tmux.Target, error) {
 	signal.Notify(winch, syscall.SIGWINCH)
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
+	var tick <-chan time.Time
+	if o.Refresh > 0 {
+		ticker := time.NewTicker(o.Refresh)
+		defer ticker.Stop()
+		tick = ticker.C
+	}
 
 	for {
 		t.f.WriteString(m.render(t.size()))
@@ -107,6 +135,11 @@ func Run(o Options) (*tmux.Target, error) {
 				}
 			}
 		case <-winch:
+		case <-tick:
+			if !m.preview || m.help {
+				continue
+			}
+			m.screens = map[string]screen{}
 		case <-quit:
 			return nil, nil
 		}
@@ -126,7 +159,7 @@ func (m *model) load() error {
 		}
 	}
 	m.roots, m.total = buildTree(sessions, here, m.home)
-	m.captures = map[string]capture{}
+	m.screens = map[string]screen{}
 	return nil
 }
 
@@ -212,9 +245,37 @@ func (m *model) move(d int) {
 
 // handle applies one key. done ends the program with target and err.
 func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
-	m.status = ""
+	if ev.key != keyMouse || ev.press {
+		m.status = ""
+	}
+	if m.help {
+		if ev.key == keyMouse {
+			if ev.press && ev.button == 0 {
+				m.help = false
+			}
+			return false, nil, nil
+		}
+		// Any key closes the help. Other than Esc, Enter and F1, it also acts.
+		m.help = false
+		if ev.key == keyCancel || ev.key == keyEnter || ev.key == keyHelp {
+			return false, nil, nil
+		}
+	}
 	switch ev.key {
 	case keyRune:
+		if len(m.query) == 0 {
+			switch ev.r {
+			case '?':
+				m.help = true
+				return false, nil, nil
+			case '<':
+				m.winOffset--
+				return false, nil, nil
+			case '>':
+				m.winOffset++
+				return false, nil, nil
+			}
+		}
 		m.query = append(m.query, ev.r)
 		m.setQuery()
 	case keyBackspace:
@@ -271,41 +332,113 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		m.setQuery()
 	case keyTogglePreview:
 		m.preview = !m.preview
+	case keyHelp:
+		m.help = true
 	case keyCancel:
 		return true, nil, nil
 	case keyEnter:
-		n := m.selected()
-		if n == nil {
-			break
+		if n := m.selected(); n != nil {
+			return m.jump(n.target())
 		}
-		t := n.target()
-		if !m.inside {
-			return true, &t, nil
-		}
-		if err := m.tmux.Switch(m.client, t); err != nil {
-			// The target may have gone away since the list was read.
-			m.status = err.Error()
-			if err := m.load(); err != nil {
-				return true, nil, err
-			}
-			m.refresh()
-			break
-		}
-		return true, nil, nil
+	case keyMouse:
+		return m.mouse(ev)
 	}
 	return false, nil, nil
+}
+
+// jump switches the client to t, or inside tmux returns t for the caller to
+// attach to. If the switch fails, the error is shown and the list reloaded.
+func (m *model) jump(t tmux.Target) (done bool, target *tmux.Target, err error) {
+	if !m.inside {
+		return true, &t, nil
+	}
+	if err := m.tmux.Switch(m.client, t); err != nil {
+		// The target may have gone away since the list was read.
+		m.status = err.Error()
+		if err := m.load(); err != nil {
+			return true, nil, err
+		}
+		m.refresh()
+		return false, nil, nil
+	}
+	return true, nil, nil
+}
+
+// mouse handles a mouse report the way tmux's chooser does: a click selects
+// a row, a double click jumps to it, the wheel moves the selection, and a
+// click in the preview jumps to the pane or window under it.
+func (m *model) mouse(ev event) (done bool, target *tmux.Target, err error) {
+	button := ev.button &^ (4 | 8 | 16) // ignore Shift, Meta and Ctrl
+	switch {
+	case !ev.press:
+	case button == 64 || button == 65:
+		d := 1
+		if button == 64 {
+			d = -1
+		}
+		// Over a session preview the wheel scrolls its windows.
+		if n := m.selected(); n != nil && n.kind == sessionRow &&
+			ev.y >= m.previewY && ev.y < m.previewY+m.previewH {
+			m.winOffset += d
+		} else {
+			m.move(d)
+		}
+	case button != 0:
+	case ev.y >= 2 && ev.y < 2+m.treeH:
+		idx := m.top + ev.y - 2
+		if idx >= len(m.rows) {
+			break
+		}
+		double := idx == m.lastClickRow && time.Since(m.lastClickAt) < doubleClick
+		m.lastClickRow, m.lastClickAt = idx, time.Now()
+		m.sel = idx
+		n := m.rows[idx].n
+		if double {
+			m.lastClickRow = -1
+			return m.jump(n.target())
+		}
+		if len(n.children) > 0 && ev.x == arrowColumn(n) && m.matcher.Empty() {
+			n.expanded = !n.expanded
+			m.refresh()
+		}
+	case ev.y == m.height-1:
+		m.help = true
+	default:
+		for i := len(m.hits) - 1; i >= 0; i-- {
+			h := m.hits[i]
+			if ev.x >= h.x0 && ev.x <= h.x1 && ev.y >= h.y0 && ev.y <= h.y1 {
+				if h.scroll != 0 {
+					m.winOffset += h.scroll
+					return false, nil, nil
+				}
+				return m.jump(h.target)
+			}
+		}
+	}
+	return false, nil, nil
+}
+
+// arrowColumn is the screen column of a row's expand arrow (see rowSpans).
+func arrowColumn(n *node) int {
+	if n.kind == sessionRow {
+		return 1
+	}
+	return 3
 }
 
 // render draws the whole screen: prompt, tree and, if on, the preview.
 func (m *model) render(width, height int) string {
 	var b strings.Builder
 	b.WriteString("\x1b[?25l")
+	m.height = height
+	m.hits = nil
+	m.previewH = 0
 
 	previewH := 0
 	if m.preview && height >= 12 {
-		previewH = height * 2 / 5
+		previewH = height / 2
 	}
-	m.treeH = max(1, height-2-previewH)
+	m.treeH = max(1, height-3-previewH)
 	if m.sel >= len(m.rows) {
 		m.sel = max(0, len(m.rows)-1)
 	}
@@ -319,7 +452,14 @@ func (m *model) render(width, height int) string {
 
 	m.drawPrompt(&b, width)
 	drawLine(&b, 1, width, styleDim, false, span{text: strings.Repeat("─", width)})
-	for i := 0; i < m.treeH; i++ {
+	for i := 0; m.help && i < m.treeH+previewH; i++ {
+		var s []span
+		if i < len(helpText) {
+			s = []span{{text: helpText[i]}}
+		}
+		drawLine(&b, 2+i, width, "", false, s...)
+	}
+	for i := 0; !m.help && i < m.treeH; i++ {
 		idx := m.top + i
 		switch {
 		case idx < len(m.rows):
@@ -338,9 +478,11 @@ func (m *model) render(width, height int) string {
 			drawLine(&b, 2+i, width, "", false)
 		}
 	}
-	if previewH > 0 {
+	if previewH > 0 && !m.help {
+		m.previewH = previewH
 		m.drawPreview(&b, 2+m.treeH, width, previewH)
 	}
+	drawLine(&b, height-1, width, styleDim, false, span{text: footer})
 	cursor := min(width, 3+textWidth(string(m.query)))
 	fmt.Fprintf(&b, "\x1b[1;%dH\x1b[?25h", cursor)
 	return b.String()
@@ -355,9 +497,13 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 	case m.queryErr != "":
 		right = span{text: clean(m.queryErr), style: styleError}
 	}
-	gap := max(2, width-2-textWidth(query)-textWidth(right.text))
+	hint := span{text: query}
+	if query == "" {
+		hint = span{text: "type to filter · ? for help", style: styleDim}
+	}
+	gap := max(2, width-2-textWidth(hint.text)-textWidth(right.text))
 	drawLine(b, 0, width, "", false,
-		span{text: "> ", style: styleCurrent}, span{text: query}, span{text: strings.Repeat(" ", gap)}, right)
+		span{text: "> ", style: styleCurrent}, hint, span{text: strings.Repeat(" ", gap)}, right)
 }
 
 func (m *model) rowSpans(n *node) []span {
@@ -402,45 +548,37 @@ func (m *model) rowSpans(n *node) []span {
 	}
 }
 
-// drawPreview draws a separator at row y and the end of the selected pane's
-// content below it, in height rows in all.
-func (m *model) drawPreview(b *strings.Builder, y, width, height int) {
-	drawLine(b, y, width, styleDim, false, span{text: strings.Repeat("─", width)})
-	var lines []string
-	if n := m.selected(); n != nil {
-		if p := n.previewPane(); p != nil {
-			c := m.capture(p.ID)
-			lines = c.lines
-			if c.err != nil {
-				lines = []string{"preview unavailable: " + c.err.Error()}
-			}
-		}
-	}
-	room := height - 1
-	if len(lines) > room {
-		lines = lines[len(lines)-room:]
-	}
-	for i := 0; i < room; i++ {
-		var s []span
-		if i < len(lines) {
-			s = []span{{text: clean(lines[i])}}
-		}
-		drawLine(b, y+1+i, width, "", false, s...)
-	}
-}
+// footer is the key hint on the bottom line.
+const footer = " Enter jump  ↑↓ move  →← expand/collapse  ^R regex  ^V preview  Esc quit  ? help"
 
-// capture returns a pane's content without trailing blank lines, cached for
-// the life of the program.
-func (m *model) capture(id string) capture {
-	if c, ok := m.captures[id]; ok {
-		return c
-	}
-	out, err := m.tmux.Capture(id)
-	lines := strings.Split(out, "\n")
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
-	}
-	c := capture{lines: lines, err: err}
-	m.captures[id] = c
-	return c
+// helpText is shown in place of the tree while help is open.
+var helpText = []string{
+	"  Filter by typing. Every word must match; matching ignores case unless",
+	"  the query has an uppercase letter. Dimmed rows only contain a match.",
+	"",
+	"    api vim       rows with both words, in any field",
+	"    !zsh          rows without zsh",
+	"    s:api         session name contains api",
+	"    w:edit        window name or index contains edit",
+	"    c:vim         pane command contains vim",
+	"    d:www         pane directory contains www",
+	"    !c:zsh        prefixes combine with !",
+	"    /^api-\\d+$/   a regular expression (or Ctrl-R to switch modes)",
+	"",
+	"  Enter          jump to the selected row",
+	"  Up/Down        move (also Ctrl-P/N, Ctrl-K/J, PgUp/PgDn, Home/End)",
+	"  Right/Left     expand, collapse (also Tab/Shift-Tab)",
+	"  Ctrl-W/Ctrl-U  delete a word, clear the query",
+	"  Ctrl-R         switch between words and regex",
+	"  Ctrl-V         show or hide the preview",
+	"  ? or F1        this help (? only when the query is empty)",
+	"  < >            scroll the windows of a session preview (empty query)",
+	"  Esc            close (this help, then the selector)",
+	"",
+	"  Mouse: click selects, double-click jumps, the wheel moves (over a",
+	"  session preview it scrolls the windows), a click on an arrow expands,",
+	"  collapses or scrolls, a click in the preview jumps to the pane or",
+	"  window under it, and a click on the bottom line opens this help.",
+	"",
+	"  Press any key to close this help.",
 }

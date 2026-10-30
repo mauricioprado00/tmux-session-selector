@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // sep separates fields in format strings. tmux prints it as the octal escape
@@ -25,14 +26,19 @@ type Pane struct {
 	Command string
 	Path    string
 	Title   string
+	// Position and size within the window, and cursor position within the pane.
+	Left, Top, Width, Height int
+	CursorX, CursorY         int
 }
 
 type Window struct {
-	ID     string // @3
-	Index  int
-	Name   string
-	Active bool
-	Panes  []*Pane
+	ID            string // @3
+	Index         int
+	Name          string
+	Active        bool
+	Width, Height int
+	Zoomed        bool
+	Panes         []*Pane
 }
 
 // ActivePane returns the window's active pane, or its first one.
@@ -105,6 +111,8 @@ var paneFields = []string{
 	"window_id", "window_index", "window_name", "window_active",
 	"pane_id", "pane_index", "pane_active",
 	"pane_current_command", "pane_current_path", "pane_title",
+	"pane_left", "pane_top", "pane_width", "pane_height", "cursor_x", "cursor_y",
+	"window_width", "window_height", "window_zoomed_flag",
 }
 
 var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
@@ -144,13 +152,16 @@ func ParsePanes(out string) ([]*Session, error) {
 		}
 		w := byWindow[f[0]+f[3]]
 		if w == nil {
-			w = &Window{ID: f[3], Index: atoi(f[4]), Name: f[5], Active: f[6] == "1"}
+			w = &Window{ID: f[3], Index: atoi(f[4]), Name: f[5], Active: f[6] == "1",
+				Width: atoi(f[19]), Height: atoi(f[20]), Zoomed: f[21] == "1"}
 			byWindow[f[0]+f[3]] = w
 			s.Windows = append(s.Windows, w)
 		}
 		w.Panes = append(w.Panes, &Pane{
 			ID: f[7], Index: atoi(f[8]), Active: f[9] == "1",
 			Command: f[10], Path: f[11], Title: f[12],
+			Left: atoi(f[13]), Top: atoi(f[14]), Width: atoi(f[15]), Height: atoi(f[16]),
+			CursorX: atoi(f[17]), CursorY: atoi(f[18]),
 		})
 	}
 	for _, s := range sessions {
@@ -236,9 +247,50 @@ func selectArgs(target Target) []string {
 	return args
 }
 
-// Capture returns the visible content of a pane as plain text.
-func (t Tmux) Capture(paneID string) (string, error) {
-	return t.Run("capture-pane", "-p", "-t", paneID)
+// Screen is a pane's visible content, with colours and attributes as SGR
+// escape sequences, and its cursor position at the time.
+type Screen struct {
+	Text             string
+	CursorX, CursorY int
+}
+
+// Capture returns the screens of panes, keyed by pane id. All panes are
+// captured in one tmux invocation; after each, display-message prints a
+// marker line carrying the pane's cursor position.
+func (t Tmux) Capture(ids ...string) (map[string]Screen, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	marker := fmt.Sprintf("tss-capture-end-%d-%d", os.Getpid(), time.Now().UnixNano())
+	var args []string
+	for _, id := range ids {
+		if len(args) > 0 {
+			args = append(args, ";")
+		}
+		args = append(args, "capture-pane", "-p", "-e", "-t", id,
+			";", "display-message", "-p", "-t", id, marker+" #{cursor_x} #{cursor_y}")
+	}
+	out, err := t.Run(args...)
+	if err != nil {
+		return nil, err
+	}
+	screens := map[string]Screen{}
+	var text strings.Builder
+	i := 0
+	for _, line := range strings.SplitAfter(out, "\n") {
+		rest, ok := strings.CutPrefix(line, marker+" ")
+		if !ok {
+			text.WriteString(line)
+			continue
+		}
+		if i < len(ids) {
+			x, y, _ := strings.Cut(strings.TrimSpace(rest), " ")
+			screens[ids[i]] = Screen{Text: text.String(), CursorX: atoi(x), CursorY: atoi(y)}
+			i++
+		}
+		text.Reset()
+	}
+	return screens, nil
 }
 
 // splitFields splits a line on sep, decoding the escapes tmux writes for
