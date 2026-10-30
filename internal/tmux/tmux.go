@@ -1,0 +1,280 @@
+// Package tmux runs the tmux binary and turns its output into a tree of
+// sessions, windows and panes.
+package tmux
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"sort"
+	"strconv"
+	"strings"
+	"syscall"
+)
+
+// sep separates fields in format strings. tmux prints it as the octal escape
+// \037, which splitFields decodes.
+const sep = '\x1f'
+
+type Pane struct {
+	ID      string // %7
+	Index   int
+	Active  bool
+	Command string
+	Path    string
+	Title   string
+}
+
+type Window struct {
+	ID     string // @3
+	Index  int
+	Name   string
+	Active bool
+	Panes  []*Pane
+}
+
+// ActivePane returns the window's active pane, or its first one.
+func (w *Window) ActivePane() *Pane {
+	for _, p := range w.Panes {
+		if p.Active {
+			return p
+		}
+	}
+	if len(w.Panes) > 0 {
+		return w.Panes[0]
+	}
+	return nil
+}
+
+type Session struct {
+	ID       string // $1
+	Name     string
+	Attached bool
+	Windows  []*Window
+}
+
+// ActiveWindow returns the session's current window, or its first one.
+func (s *Session) ActiveWindow() *Window {
+	for _, w := range s.Windows {
+		if w.Active {
+			return w
+		}
+	}
+	if len(s.Windows) > 0 {
+		return s.Windows[0]
+	}
+	return nil
+}
+
+// Location is where a client currently is.
+type Location struct {
+	Client, Session, Window, Pane string
+}
+
+// Target is where to jump to. Window and Pane may be empty.
+type Target struct {
+	Session, Window, Pane string
+}
+
+// Tmux runs tmux commands. Args go before every command, for example
+// {"-L", "socket"}.
+type Tmux struct {
+	Args []string
+}
+
+// Run runs one tmux command line and returns its standard output.
+func (t Tmux) Run(args ...string) (string, error) {
+	cmd := exec.Command("tmux", append(append([]string{}, t.Args...), args...)...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", errors.New("tmux " + args[0] + ": " + msg)
+	}
+	return string(out), nil
+}
+
+var paneFields = []string{
+	"session_id", "session_name", "session_attached",
+	"window_id", "window_index", "window_name", "window_active",
+	"pane_id", "pane_index", "pane_active",
+	"pane_current_command", "pane_current_path", "pane_title",
+}
+
+var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
+
+func format(fields []string) string {
+	return "#{" + strings.Join(fields, "}"+string(sep)+"#{") + "}"
+}
+
+// Sessions lists every session, window and pane on the server.
+func (t Tmux) Sessions() ([]*Session, error) {
+	out, err := t.Run("list-panes", "-a", "-F", format(paneFields))
+	if err != nil {
+		return nil, err
+	}
+	return ParsePanes(out)
+}
+
+// ParsePanes builds the tree from list-panes output in the paneFields format.
+// Sessions keep tmux's order; windows and panes are sorted by index.
+func ParsePanes(out string) ([]*Session, error) {
+	var sessions []*Session
+	bySession := map[string]*Session{}
+	byWindow := map[string]*Window{} // keyed by session and window: a window can be linked into several sessions
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		f := splitFields(line)
+		if len(f) != len(paneFields) {
+			return nil, fmt.Errorf("unexpected tmux output: %q", line)
+		}
+		s := bySession[f[0]]
+		if s == nil {
+			s = &Session{ID: f[0], Name: f[1], Attached: f[2] != "0"}
+			bySession[f[0]] = s
+			sessions = append(sessions, s)
+		}
+		w := byWindow[f[0]+f[3]]
+		if w == nil {
+			w = &Window{ID: f[3], Index: atoi(f[4]), Name: f[5], Active: f[6] == "1"}
+			byWindow[f[0]+f[3]] = w
+			s.Windows = append(s.Windows, w)
+		}
+		w.Panes = append(w.Panes, &Pane{
+			ID: f[7], Index: atoi(f[8]), Active: f[9] == "1",
+			Command: f[10], Path: f[11], Title: f[12],
+		})
+	}
+	for _, s := range sessions {
+		sort.SliceStable(s.Windows, func(i, j int) bool { return s.Windows[i].Index < s.Windows[j].Index })
+		for _, w := range s.Windows {
+			sort.SliceStable(w.Panes, func(i, j int) bool { return w.Panes[i].Index < w.Panes[j].Index })
+		}
+	}
+	return sessions, nil
+}
+
+// Current returns where client is. An empty client means the calling one.
+func (t Tmux) Current(client string) (Location, error) {
+	if client == "" {
+		out, err := t.Run("display-message", "-p", format(locationFields))
+		if err != nil {
+			return Location{}, err
+		}
+		return parseLocation(strings.TrimSuffix(out, "\n")), nil
+	}
+	out, err := t.Run("list-clients", "-F", format(locationFields))
+	if err != nil {
+		return Location{}, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if l := parseLocation(line); l.Client == client {
+			return l, nil
+		}
+	}
+	return Location{}, fmt.Errorf("tmux client %q not found", client)
+}
+
+func parseLocation(line string) Location {
+	f := splitFields(line)
+	for len(f) < len(locationFields) {
+		f = append(f, "")
+	}
+	return Location{Client: f[0], Session: f[1], Window: f[2], Pane: f[3]}
+}
+
+// Switch moves client (the calling client when empty) to target, in one
+// tmux invocation.
+func (t Tmux) Switch(client string, target Target) error {
+	args := selectArgs(target)
+	if len(args) > 0 {
+		args = append(args, ";")
+	}
+	args = append(args, "switch-client")
+	if client != "" {
+		args = append(args, "-c", client)
+	}
+	_, err := t.Run(append(args, "-t", target.Session)...)
+	return err
+}
+
+// Attach replaces the current process with a tmux client attached to target.
+// It returns only on error.
+func (t Tmux) Attach(target Target) error {
+	if args := selectArgs(target); len(args) > 0 {
+		if _, err := t.Run(args...); err != nil {
+			return err
+		}
+	}
+	path, err := exec.LookPath("tmux")
+	if err != nil {
+		return err
+	}
+	argv := append(append([]string{"tmux"}, t.Args...), "attach-session", "-t", target.Session)
+	return syscall.Exec(path, argv, os.Environ())
+}
+
+func selectArgs(target Target) []string {
+	var args []string
+	if target.Window != "" {
+		args = append(args, "select-window", "-t", target.Window)
+	}
+	if target.Pane != "" {
+		if len(args) > 0 {
+			args = append(args, ";")
+		}
+		args = append(args, "select-pane", "-t", target.Pane)
+	}
+	return args
+}
+
+// Capture returns the visible content of a pane as plain text.
+func (t Tmux) Capture(paneID string) (string, error) {
+	return t.Run("capture-pane", "-p", "-t", paneID)
+}
+
+// splitFields splits a line on sep, decoding the escapes tmux writes for
+// control characters (\ooo) and backslashes (\\). Older tmux versions print
+// sep raw, which is handled too.
+func splitFields(line string) []string {
+	var fields []string
+	var b strings.Builder
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case c == '\\' && i+1 < len(line) && line[i+1] == '\\':
+			b.WriteByte('\\')
+			i++
+			continue
+		case c == '\\' && i+3 < len(line) && isOctal(line[i+1:i+4]):
+			c = (line[i+1]-'0')<<6 | (line[i+2]-'0')<<3 | (line[i+3] - '0')
+			i += 3
+		}
+		if c == sep {
+			fields = append(fields, b.String())
+			b.Reset()
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return append(fields, b.String())
+}
+
+func isOctal(s string) bool {
+	return s[0] >= '0' && s[0] <= '3' &&
+		s[1] >= '0' && s[1] <= '7' &&
+		s[2] >= '0' && s[2] <= '7'
+}
+
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
+}

@@ -36,7 +36,7 @@ expression.
 | Item | Decision |
 |---|---|
 | Language | **Go**: a single static binary, simple cross-compilation, small toolchain. Python (needs an interpreter on every host) and Rust (heavier toolchain and dependency tree) were the alternatives. |
-| Dependencies | Go standard library plus `golang.org/x/term` (raw mode, terminal size). No TUI framework; the screen is drawn with plain ANSI escape sequences. Any further dependency needs a stated reason. |
+| Dependencies | Go standard library only. Raw mode and terminal size use `ioctl` through `syscall`, with the request constants in per-OS files (Linux; macOS and the BSDs). No TUI framework; the screen is drawn with plain ANSI escape sequences. Any dependency needs a stated reason. |
 | tmux interaction | Only by running the `tmux` binary (`list-panes`, `capture-pane`, `switch-client`, …). No parsing of tmux internals or sockets. |
 | Minimum tmux | 3.2 for popup mode (`display-popup`). Older versions work through the fallback launch described in §9. |
 | Binary name | `tmux-session-selector` |
@@ -49,17 +49,22 @@ All data comes from a single call:
 tmux list-panes -a -F '<format>'
 ```
 
-with fields separated by a character that cannot appear in names (`\x1f`, the
-ASCII unit separator). Fields read per pane:
+with fields separated by `\x1f` (the ASCII unit separator). tmux 3.x does not
+print control characters raw: it writes them as octal escapes (`\037`) and a
+backslash as `\\`, so the parser decodes those escapes while splitting. A raw
+`\x1f` (older tmux) is accepted too. Fields read per pane:
 
 | Level | Fields |
 |---|---|
-| Session | `session_id`, `session_name`, `session_attached`, `session_windows`, `session_activity` |
-| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_panes`, `window_activity` |
+| Session | `session_id`, `session_name`, `session_attached` |
+| Window | `window_id`, `window_index`, `window_name`, `window_active` |
 | Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title` |
 
-Plus `client_session` of the invoking client, to mark and pre-select the current
-location.
+The current location (`client_name`, `session_id`, `window_id`, `pane_id`) is
+read with `display-message -p` for the calling client, or from `list-clients`
+when `--client` names one. It is used to mark and pre-select the current row.
+
+A window linked into several sessions appears under each of them.
 
 Rows are grouped into a tree: session → window → pane. Sessions keep tmux's
 order (by name); windows are ordered by index, panes by index. Windows with a
@@ -177,7 +182,11 @@ session even though no single field contains both words.
   matches. Ancestors that are shown only because of a matching descendant are
   dimmed. Collapsed state is ignored while a query is active, so every match is
   visible.
-- If the selected row disappears, the selection moves to the first matching row.
+- When the rows change, the selection stays on the same row if it is still shown
+  and matches. Otherwise it moves to that row's nearest shown ancestor (so
+  clearing the query returns to where you were), and failing that to the first
+  matching row. A row shown only as context is never kept selected, so `Enter`
+  after typing goes to a match, not to its session.
 - When nothing matches, the tree area shows `no matches`, and `Enter` does
   nothing.
 
@@ -194,11 +203,13 @@ On `Enter`, depending on the selected row:
 | Row | Commands |
 |---|---|
 | Session | `switch-client -t <session_id>` |
-| Window | `switch-client -t <session_id>` ; `select-window -t <window_id>` |
-| Pane | as for window, then `select-pane -t <pane_id>` |
+| Window | `select-window -t <window_id>` ; `switch-client -t <session_id>` |
+| Pane | `select-window -t <window_id>` ; `select-pane -t <pane_id>` ; `switch-client -t <session_id>` |
 
-The commands are sent as one tmux invocation, separated by `\;`, so the switch
-is atomic from the user's point of view. IDs (`$1`, `@3`, `%7`) are used rather
+The commands are sent as one tmux invocation, separated by `;` arguments, so
+the switch is atomic from the user's point of view. The window and pane are
+selected before switching so the client never shows the old window of the
+target session in between. IDs (`$1`, `@3`, `%7`) are used rather
 than names, so names containing `:`, `.` or spaces cannot be misparsed.
 
 `switch-client` takes `-c <client>` when `--client` is given (see §9), so the
@@ -215,15 +226,21 @@ When run **outside** tmux (`$TMUX` unset), the tool uses
 In `~/.tmux.conf`, replacing the built-in chooser:
 
 ```tmux
-bind w display-popup -E -w 80% -h 80% "tmux-session-selector --client '#{client_name}'"
+bind w display-popup -E -w 80% -h 80% tmux-session-selector
 ```
 
 `-E` closes the popup when the program exits.
 
+`display-popup` and `new-window` do **not** format-expand their command, so
+`--client '#{client_name}'` in a binding would pass the literal text. It is not
+needed: inside a popup, tmux resolves the calling client from `$TMUX` correctly
+(checked on tmux 3.4). A `--client` value that still contains `#{` is ignored
+rather than treated as a client name.
+
 ### 9.2 Fallback for tmux < 3.2
 
 ```tmux
-bind w new-window -n select "tmux-session-selector --client '#{client_name}'"
+bind w new-window -n select tmux-session-selector
 ```
 
 The temporary window closes itself when the program exits.
@@ -252,8 +269,11 @@ view.
 | 1 | runtime error (tmux not found, no server running, tmux command failed) |
 | 2 | invalid flags |
 
-Errors go to stderr in one line. In popup mode the popup would close at once
-and hide the message, so on error the tool waits for a key press before exiting.
+Errors go to stderr in one line. A popup or temporary window would close at
+once and hide the message, so whenever the tool runs inside tmux (`$TMUX` set
+or `--client` given) it waits for a key press before exiting on error. The
+program cannot tell a popup from a shell, so a run from a shell inside tmux
+waits too.
 
 ## 10. Robustness
 
@@ -284,11 +304,16 @@ specs.md                            this document
   prefixes, regex, invalid regex, ancestor/descendant visibility.
 - **Unit tests** for `internal/tmux` parsing, using recorded `list-panes`
   output that includes awkward names.
-- **Integration test** that starts an isolated server (`tmux -L <random> -f
-  /dev/null`), creates sessions, windows and panes, and checks the built tree
-  and the result of a jump. It runs in CI on Linux, where tmux is installed in
-  the job.
-- `go vet` and `gofmt` checks in CI.
+- **Unit tests** for `internal/ui`: key decoding, tree visibility, selection
+  rules, line truncation with wide characters.
+- **Integration tests** that start an isolated server (`tmux -S
+  <test temp dir>/sock -f /dev/null`), create sessions, windows and panes, and
+  check the built tree. The switch test attaches a real client through a
+  pseudo-terminal (`script`, Linux only) and checks where it lands. Tests
+  always pass an explicit socket: a bare `tmux` command inside a tmux session
+  talks to the user's own server through `$TMUX`.
+- **Benchmark** for §7.5 (`BenchmarkKeystroke`, 500 panes).
+- `gofmt`, `go vet` (Linux and macOS) and the tests run in CI.
 
 ## 13. Build and release
 
@@ -301,14 +326,14 @@ On every push and pull request: `gofmt` check, `go vet`, `go test ./...`
 
 On a pushed tag matching `v*`:
 
-1. Run the CI checks.
+1. Run the CI checks (the release workflow calls `ci.yml`).
 2. Build with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X
    main.version=<tag>"` for:
    - `linux/amd64`, `linux/arm64`
    - `darwin/amd64`, `darwin/arm64`
-3. Package each binary as
-   `tmux-session-selector_<version>_<os>_<arch>.tar.gz` with `README.md` and the
-   licence.
+3. Package each binary as `tmux-session-selector_<os>_<arch>.tar.gz`, with
+   `README.md` and `LICENSE` when present, all at the archive root. The names
+   carry no version, so the `releases/latest/download/…` URL stays stable.
 4. Write `checksums.txt` (SHA-256).
 5. Create a GitHub Release for the tag with the archives and checksums
    attached, and notes generated from the commits since the previous tag.
@@ -319,11 +344,11 @@ actions.
 ### 13.3 Install
 
 ```sh
-curl -L https://github.com/<owner>/tmux-session-selector/releases/latest/download/tmux-session-selector_<version>_linux_amd64.tar.gz \
+curl -L https://github.com/mauricioprado00/tmux-session-selector/releases/latest/download/tmux-session-selector_linux_amd64.tar.gz \
   | tar -xz -C ~/.local/bin tmux-session-selector
 ```
 
-or `go install <module>/cmd/tmux-session-selector@latest`.
+or `go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session-selector@latest`.
 
 ## 14. Later (not in v1)
 

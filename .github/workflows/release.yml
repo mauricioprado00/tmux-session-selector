@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          set -eu
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*}
+            arch=${target#*/}
+            name=tmux-session-selector_${os}_${arch}
+            mkdir -p "build/$name"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" \
+              -o "build/$name/tmux-session-selector" ./cmd/tmux-session-selector
+            cp README.md "build/$name/"
+            if [ -f LICENSE ]; then cp LICENSE "build/$name/"; fi
+            tar -C "build/$name" -czf "dist/$name.tar.gz" $(ls "build/$name")
+          done
+          (cd dist && sha256sum *.tar.gz > checksums.txt)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

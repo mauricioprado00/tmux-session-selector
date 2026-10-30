@@ -1,0 +1,103 @@
+# tmux-session-selector
+
+A replacement for tmux's `prefix` + `w` tree chooser that you filter by typing
+plain words or a regular expression, instead of tmux format expressions.
+
+```
+> api vim                                         [words]  3/148
+──────────────────────────────────────────────────────────────────
+ ▾ api  (3 windows, attached)
+   ▾ 1: editor
+       %4  nvim  ~/www/api
+```
+
+One static binary; nothing to install but tmux.
+
+## Install
+
+Download the archive for your system from the
+[latest release](https://github.com/mauricioprado00/tmux-session-selector/releases/latest):
+
+```sh
+curl -L https://github.com/mauricioprado00/tmux-session-selector/releases/latest/download/tmux-session-selector_linux_amd64.tar.gz \
+  | tar -xz -C ~/.local/bin tmux-session-selector
+```
+
+Archives exist for `linux_amd64`, `linux_arm64`, `darwin_amd64` and
+`darwin_arm64`; `checksums.txt` holds their SHA-256 sums.
+
+Or build from source with Go 1.22 or newer:
+
+```sh
+go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session-selector@latest
+```
+
+## Bind it
+
+In `~/.tmux.conf` (tmux 3.2 or newer), replacing the built-in chooser:
+
+```tmux
+bind w display-popup -E -w 80% -h 80% tmux-session-selector
+```
+
+On older tmux, open it in a window instead:
+
+```tmux
+bind w new-window -n select tmux-session-selector
+```
+
+Reload with `tmux source-file ~/.tmux.conf`.
+
+## Use
+
+Type to filter. `Enter` jumps to the selected session, window or pane; `Esc`
+closes without changing anything.
+
+| Query | Shows |
+|---|---|
+| `api vim` | rows containing both words, in any of session, window, command, path or pane title |
+| `!zsh` | rows not containing `zsh` |
+| `s:api` | sessions whose name contains `api` (and everything in them) |
+| `w:edit` | windows whose name or index contains `edit` |
+| `c:vim` | panes running a command containing `vim` |
+| `d:www` | panes whose current directory contains `www` |
+| `/^api-(dev\|prod)$/` | a regular expression (Go RE2 syntax) |
+
+Matching ignores case unless the query has an uppercase letter. A row shown
+dimmed does not match itself; it is there because something inside it does.
+
+| Key | Action |
+|---|---|
+| `Up` / `Down`, `Ctrl-P` / `Ctrl-N`, `Ctrl-K` / `Ctrl-J` | move |
+| `PgUp` / `PgDn`, `Home` / `End` | move further |
+| `Right` / `Tab`, `Left` / `Shift-Tab` | expand, collapse |
+| `Backspace`, `Ctrl-W`, `Ctrl-U` | delete a character, a word, everything |
+| `Ctrl-R` | switch between words and regex mode |
+| `Ctrl-V` | show or hide the pane preview |
+| `Enter` | jump |
+| `Esc`, `Ctrl-C`, `Ctrl-G` | cancel |
+
+Command-line flags:
+
+```
+tmux-session-selector [flags] [initial query]
+
+  -client NAME   tmux client to switch (default: the calling client)
+  -regex         start in regex mode
+  -no-preview    start with the preview hidden
+  -version       print the version and exit
+```
+
+An initial query gives a pre-filtered view, for example
+`bind W display-popup -E "tmux-session-selector s:work"`.
+
+Run outside tmux, it attaches to the selected session.
+
+## Development
+
+```sh
+go test ./...   # the integration tests need tmux; they use their own server
+```
+
+Pushing a `v*` tag builds the release archives and publishes a GitHub release.
+See [specs.md](specs.md) for the full specification.
