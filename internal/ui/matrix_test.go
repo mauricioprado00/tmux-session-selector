@@ -101,6 +101,18 @@ func TestMatrixKeys(t *testing.T) {
 	if m.matrix.focus != 0 {
 		t.Errorf("a click should focus w0, got w%d", m.matrix.focus)
 	}
+	m.handle(typed('o'))
+	if m.matrix.center != s.Windows[0] {
+		t.Errorf("o should centre the window in focus, w0, got %+v", m.matrix.center)
+	}
+	m.handle(event{key: keyMatrix})
+	if m.matrix == nil || m.matrix.center != nil {
+		t.Errorf("Ctrl-O on the centred window should go back to the even grid")
+	}
+	m.handle(typed('o'))
+	if m.matrix.center != s.Windows[0] || m.matrix.focus != 0 {
+		t.Errorf("o should centre w0 again, keeping the focus")
+	}
 	m.handle(typed('q'))
 	if m.matrix != nil {
 		t.Error("q should close the matrix")

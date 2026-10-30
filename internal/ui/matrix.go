@@ -69,12 +69,17 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 	}
 	switch ev.key {
 	case keyRune:
-		if d, ok := letters[ev.r]; ok {
+		switch d, ok := letters[ev.r]; {
+		case ok:
 			mv.focus = mv.nearest(d[0], d[1])
-		} else if ev.r == 'q' {
+		case ev.r == 'o':
+			mv.toggleCenter()
+		case ev.r == 'q':
 			m.matrix = nil
 		}
-	case keyCancel, keyMatrix:
+	case keyMatrix:
+		mv.toggleCenter()
+	case keyCancel:
 		m.matrix = nil
 	case keyEnter:
 		return m.matrixJump()
@@ -82,6 +87,17 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 		return m.matrixMouse(ev)
 	}
 	return false, nil, nil
+}
+
+// toggleCenter puts the window in focus in the centre, or, if it is there
+// already, goes back to sharing the screen evenly.
+func (mv *matrixView) toggleCenter() {
+	focused := mv.session.Windows[mv.focus]
+	if mv.center == focused {
+		mv.center = nil
+	} else {
+		mv.center = focused
+	}
 }
 
 // matrixJump switches to the window in focus, as choosing it in the list
@@ -300,7 +316,7 @@ func (m *model) drawMatrix(b *strings.Builder, width, height int) {
 	}
 	c.draw(b, 1)
 	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ or hjkl focus  Enter switch to it  click focus  double-click switch  Esc/q back"})
+		span{text: " ←↑↓→ or hjkl focus  o centre / uncentre  Enter switch to it  double-click switch  Esc/q back"})
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.

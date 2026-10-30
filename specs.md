@@ -324,7 +324,8 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 | arrows, `h` `j` `k` `l` | move the focus to the nearest window that way |
 | `Enter`, double-click | switch to the window in focus, as choosing it in the list does (`--command` applies) |
 | click / wheel | focus a window / the next or previous one |
-| `Esc`, `q`, `Ctrl-O` | back to the list |
+| `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |
+| `Esc`, `q` | back to the list |
 
 If switching fails, the matrix closes and the error shows on the list.
 
