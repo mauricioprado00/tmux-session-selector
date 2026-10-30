@@ -48,6 +48,7 @@ Let the binary do it:
 ```sh
 tmux-session-selector -tmux-bind                  # prefix + w, replacing tmux's chooser
 tmux-session-selector -tmux-bind -key W           # or another key
+tmux-session-selector -tmux-bind -open window     # a full-screen window instead of a popup
 tmux-session-selector -tmux-bind -- -normal       # arguments after -- go into the binding
 tmux-session-selector -tmux-unbind                # remove it again
 ```
@@ -164,6 +165,7 @@ tmux-session-selector [flags] [initial query]
   -tmux-bind     bind the selector in tmux and exit (-key, -config; args after --)
   -tmux-unbind   remove that binding and exit
   -key KEY       the key for -tmux-bind, after tmux's prefix (default w)
+  -open MODE     for -tmux-bind: popup (default) or window (fills the screen)
   -config PATH   the tmux configuration file for -tmux-bind / -tmux-unbind
   -zoom          zoom the selector's pane while it runs (for a new-window or
                  split binding; has no effect in a popup)
