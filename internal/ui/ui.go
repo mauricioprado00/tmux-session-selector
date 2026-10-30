@@ -66,6 +66,7 @@ type model struct {
 	treeH     int
 	preview   bool
 	help      bool
+	helpTop   int    // first help line shown, when the help is scrolled
 	template  string // Options.Command
 	allGroups bool
 	order     int // index into SortOrders
@@ -360,8 +361,20 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		return false, nil, nil
 	}
 	if m.help {
+		// Movement keys and the wheel scroll the help.
+		scroll := map[key]int{keyUp: -1, keyDown: 1, keyPageUp: -m.treeH, keyPageDown: m.treeH,
+			keyHome: -len(helpText), keyEnd: len(helpText)}
+		if d, ok := scroll[ev.key]; ok {
+			m.helpTop += d
+			return false, nil, nil
+		}
 		if ev.key == keyMouse {
-			if ev.press && ev.button == 0 {
+			switch {
+			case ev.press && ev.button&^(4|8|16) == 64:
+				m.helpTop--
+			case ev.press && ev.button&^(4|8|16) == 65:
+				m.helpTop++
+			case ev.press && ev.button == 0:
 				m.help = false
 			}
 			return false, nil, nil
@@ -377,7 +390,7 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		if len(m.query) == 0 {
 			switch ev.r {
 			case '?':
-				m.help = true
+				m.help, m.helpTop = true, 0
 				return false, nil, nil
 			case '<':
 				m.winOffset--
@@ -443,7 +456,7 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	case keyTogglePreview:
 		m.preview = !m.preview
 	case keyHelp:
-		m.help = true
+		m.help, m.helpTop = true, 0
 	case keyCancel:
 		return true, nil, nil
 	case keyEnter:
@@ -735,7 +748,7 @@ func (m *model) mouse(ev event) (done bool, target *tmux.Target, err error) {
 			m.refresh()
 		}
 	case ev.y == m.height-1:
-		m.help = true
+		m.help, m.helpTop = true, 0
 	default:
 		for i := len(m.hits) - 1; i >= 0; i-- {
 			h := m.hits[i]
@@ -805,12 +818,8 @@ func (m *model) render(width, height int) string {
 
 	m.drawPrompt(&b, width)
 	drawLine(&b, 1, width, styleDim, false, span{text: strings.Repeat("─", width)})
-	for i := 0; m.help && i < m.treeH+previewH; i++ {
-		var s []span
-		if i < len(helpText) {
-			s = []span{{text: helpText[i]}}
-		}
-		drawLine(&b, 2+i, width, "", false, s...)
+	if m.help {
+		m.drawHelp(&b, 2, width, m.treeH+previewH)
 	}
 	for i := 0; !m.help && i < m.treeH; i++ {
 		idx := m.top + i
@@ -954,6 +963,28 @@ func (m *model) rowContent(n *node) []span {
 // footer is the key hint on the bottom line.
 const footer = " Enter jump  ↑↓ move  →← expand/collapse  ^R regex  ^V preview  Esc quit  ? help"
 
+// drawHelp draws the help in height rows from screen row y. When it does
+// not fit, it scrolls, and the last row says how.
+func (m *model) drawHelp(b *strings.Builder, y, width, height int) {
+	room := height
+	if len(helpText) > height {
+		room = height - 1
+	}
+	m.helpTop = max(0, min(m.helpTop, len(helpText)-room))
+	for i := 0; i < room; i++ {
+		var s []span
+		if m.helpTop+i < len(helpText) {
+			s = []span{{text: helpText[m.helpTop+i]}}
+		}
+		drawLine(b, y+i, width, "", false, s...)
+	}
+	if room < height {
+		drawLine(b, y+room, width, styleDim, false, span{text: fmt.Sprintf(
+			"  ↑↓ PgUp PgDn or wheel to scroll (lines %d–%d of %d); any other key closes",
+			m.helpTop+1, m.helpTop+room, len(helpText))})
+	}
+}
+
 // helpText is shown in place of the tree while help is open.
 var helpText = []string{
 	"  Filter by typing. Every word must match; matching ignores case unless",
@@ -993,5 +1024,5 @@ var helpText = []string{
 	"  window under it, a right-click opens a menu of commands, and a click",
 	"  on the bottom line opens this help.",
 	"",
-	"  Press any key to close this help.",
+	"  Arrow keys and the wheel scroll this help; any other key closes it.",
 }

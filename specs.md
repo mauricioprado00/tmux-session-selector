@@ -133,8 +133,10 @@ line shows the order, e.g. `(sort: time, reversed)`, as tmux's does.
 
 `?` (while the query is empty) or `F1` replaces the tree and preview with a
 help panel: the query syntax (words, `!`, `s:`, `w:`, `c:`, `d:`, `/regex/`,
-smart case) and every key binding. Any key closes it; keys other than `Esc`,
-`Enter` and `F1` also take effect, so typing goes straight into the query.
+smart case), every key binding and the mouse actions. When it does not fit,
+`Up`/`Down`, `PgUp`/`PgDn`, `Home`/`End` and the wheel scroll it, and its last
+row says so. Any other key closes it; keys other than `Esc`, `Enter` and `F1`
+also take effect, so typing goes straight into the query.
 `F1` alone is not enough because some terminals (GNOME Terminal) keep it for
 their own help. The same query syntax is printed by `--help`.
 

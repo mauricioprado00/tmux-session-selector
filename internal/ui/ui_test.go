@@ -415,3 +415,28 @@ func TestMenu(t *testing.T) {
 		t.Error("another key should close the menu without typing")
 	}
 }
+
+func TestHelpScrolls(t *testing.T) {
+	m := &model{roots: testTree(), total: 7}
+	m.setQuery()
+	m.handle(typed('?'))
+	screen := m.render(80, 24)
+	if !strings.Contains(screen, "to scroll (lines 1–20 of") {
+		t.Fatalf("a 24-line screen should show a scroll hint")
+	}
+	m.handle(event{key: keyDown})
+	m.handle(event{key: keyMouse, button: 65, press: true})
+	m.render(80, 24)
+	if !m.help || m.helpTop != 2 {
+		t.Errorf("Down and the wheel should scroll the help, helpTop %d", m.helpTop)
+	}
+	m.handle(event{key: keyEnd})
+	m.render(80, 24)
+	if m.helpTop != len(helpText)-20 {
+		t.Errorf("End should scroll to the last page, helpTop %d", m.helpTop)
+	}
+	m.handle(typed('a'))
+	if m.help || string(m.query) != "a" {
+		t.Errorf("another key should close the help and type, query %q", string(m.query))
+	}
+}
