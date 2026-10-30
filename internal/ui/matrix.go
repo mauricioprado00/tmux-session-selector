@@ -27,6 +27,11 @@ type matrixView struct {
 	center  *tmux.Window // nil for an even grid
 	focus   int          // index into session.Windows
 	cells   []cellBox    // where each window was drawn, by index into session.Windows
+	// The focus point: where in the focused window the focus is, in screen
+	// cells, so that moving through a large window keeps to the column (or
+	// row) it was entered by. Outside the focused window it is reset to the
+	// window's middle.
+	px, py int
 	// The window number being typed, and when its last digit came.
 	number   string
 	numberAt time.Time
@@ -70,7 +75,7 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 	dirs := map[key][2]int{keyUp: {0, -1}, keyDown: {0, 1}, keyExpand: {1, 0}, keyCollapse: {-1, 0}}
 	letters := map[rune][2]int{'k': {0, -1}, 'j': {0, 1}, 'l': {1, 0}, 'h': {-1, 0}}
 	if d, ok := dirs[ev.key]; ok {
-		mv.focus = mv.nearest(d[0], d[1])
+		mv.move(d[0], d[1])
 		return false, nil, nil
 	}
 	n := len(mv.session.Windows)
@@ -86,7 +91,7 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 	case keyRune:
 		switch d, ok := letters[ev.r]; {
 		case ok:
-			mv.focus = mv.nearest(d[0], d[1])
+			mv.move(d[0], d[1])
 		case ev.r >= '0' && ev.r <= '9':
 			mv.typeDigit(ev.r)
 		case ev.r == 'o':
@@ -181,43 +186,57 @@ func (m *model) matrixMouse(ev event) (done bool, target *tmux.Target, err error
 	return false, nil, nil
 }
 
-// nearest is the window to move the focus to in direction (dx, dy): of the
-// boxes beyond the focused one that way, those beside it (overlapping it
-// across the direction) come first, then the closest, then the best aligned.
-// It is the focused one if there is none that way. Comparing boxes rather
-// than centre points keeps the large centre window reachable from every
-// window around it.
+// move moves the focus in direction (dx, dy). The focus point keeps its
+// column when moving up or down, and its row when moving left or right,
+// within the window it lands on.
+func (mv *matrixView) move(dx, dy int) {
+	if mv.focus >= len(mv.cells) {
+		return
+	}
+	mv.px, mv.py = mv.point()
+	mv.focus = mv.nearest(dx, dy)
+	b := mv.cells[mv.focus]
+	if dx != 0 {
+		mv.px, mv.py = (b.x0+b.x1)/2, max(b.y0, min(mv.py, b.y1))
+	} else {
+		mv.px, mv.py = max(b.x0, min(mv.px, b.x1)), (b.y0+b.y1)/2
+	}
+}
+
+// point is the focus point, or the middle of the focused window if the
+// point is not in it, as after the focus moved some other way.
+func (mv *matrixView) point() (int, int) {
+	f := mv.cells[mv.focus]
+	if f.contains(mv.px, mv.py) {
+		return mv.px, mv.py
+	}
+	return (f.x0 + f.x1) / 2, (f.y0 + f.y1) / 2
+}
+
+// nearest is the window to move the focus to in direction (dx, dy). Of the
+// windows beyond the focused one that way, it prefers one in line with the
+// focus point (spanning its column, or row), then one beside the focused
+// window, then the closest, then the best aligned with the focus point.
+// Comparing boxes rather than centre points keeps the large centre window
+// reachable from all around it. With nothing that way, the focus wraps
+// around.
 func (mv *matrixView) nearest(dx, dy int) int {
 	if mv.focus >= len(mv.cells) {
 		return mv.focus
 	}
 	f := mv.cells[mv.focus]
 	best := mv.focus
-	var bestRank [3]int
+	var bestRank [4]int
 	for i, b := range mv.cells {
 		if i == mv.focus {
 			continue
 		}
-		var gap, overlap, offset int
-		switch {
-		case dx > 0:
-			gap, overlap, offset = b.x0-f.x1, min(b.y1, f.y1)-max(b.y0, f.y0), abs(b.y0+b.y1-f.y0-f.y1)
-		case dx < 0:
-			gap, overlap, offset = f.x0-b.x1, min(b.y1, f.y1)-max(b.y0, f.y0), abs(b.y0+b.y1-f.y0-f.y1)
-		case dy > 0:
-			gap, overlap, offset = b.y0-f.y1, min(b.x1, f.x1)-max(b.x0, f.x0), abs(b.x0+b.x1-f.x0-f.x1)
-		default:
-			gap, overlap, offset = f.y0-b.y1, min(b.x1, f.x1)-max(b.x0, f.x0), abs(b.x0+b.x1-f.x0-f.x1)
-		}
+		gap := map[[2]int]int{{1, 0}: b.x0 - f.x1, {-1, 0}: f.x0 - b.x1, {0, 1}: b.y0 - f.y1, {0, -1}: f.y0 - b.y1}[[2]int{dx, dy}]
 		if gap <= 0 {
 			continue // not beyond the focused box that way
 		}
-		beside := 0
-		if overlap < 0 {
-			beside = 1
-		}
-		if rank := [3]int{beside, gap, offset}; best == mv.focus || less3(rank, bestRank) {
-			best, bestRank = i, rank
+		if rank := mv.alignment(b, dx); best == mv.focus || less4(rank(gap), bestRank) {
+			best, bestRank = i, rank(gap)
 		}
 	}
 	if best == mv.focus {
@@ -226,28 +245,50 @@ func (mv *matrixView) nearest(dx, dy int) int {
 	return best
 }
 
-// wrap is the window to focus when nothing is beyond the focused one in
-// direction (dx, dy): the farthest one the other way that is beside it, as
-// if the screen wrapped around.
-func (mv *matrixView) wrap(dx, dy int) int {
+// alignment ranks box b, for a move along x if dx != 0 or else along y, by
+// how it lines up with the focus point and the focused box; the returned
+// function completes the rank with a distance.
+func (mv *matrixView) alignment(b cellBox, dx int) func(distance int) [4]int {
 	f := mv.cells[mv.focus]
-	best, bestEdge := mv.focus, 0
+	px, py := mv.point()
+	lo, hi, flo, fhi, p := b.x0, b.x1, f.x0, f.x1, px
+	if dx != 0 {
+		lo, hi, flo, fhi, p = b.y0, b.y1, f.y0, f.y1, py
+	}
+	inLine, beside := 1, 1
+	if lo <= p && p <= hi {
+		inLine = 0
+	}
+	if min(hi, fhi) >= max(lo, flo) {
+		beside = 0
+	}
+	offset := abs(lo + hi - 2*p)
+	return func(distance int) [4]int { return [4]int{inLine, beside, distance, offset} }
+}
+
+// wrap is the window to focus when nothing is beyond the focused one in
+// direction (dx, dy): the farthest one the other way, preferring those in
+// line with the focus point, as if the screen wrapped around.
+func (mv *matrixView) wrap(dx, dy int) int {
+	best := mv.focus
+	var bestRank [4]int
 	for i, b := range mv.cells {
-		var overlap, edge int
-		switch {
-		case dx != 0:
-			overlap, edge = min(b.y1, f.y1)-max(b.y0, f.y0), -dx*b.x0
-		default:
-			overlap, edge = min(b.x1, f.x1)-max(b.x0, f.x0), -dy*b.y0
+		if i == mv.focus {
+			continue
 		}
-		if i != mv.focus && overlap >= 0 && (best == mv.focus || edge > bestEdge) {
-			best, bestEdge = i, edge
+		rank := mv.alignment(b, dx)
+		if r := rank(0); r[0] == 1 && r[1] == 1 {
+			continue // neither in line nor beside: not across the wrap
+		}
+		far := dx*b.x0 + dy*b.y0 // the farther the other way, the smaller
+		if r := rank(far); best == mv.focus || less4(r, bestRank) {
+			best, bestRank = i, r
 		}
 	}
 	return best
 }
 
-func less3(a, b [3]int) bool {
+func less4(a, b [4]int) bool {
 	for i := range a {
 		if a[i] != b[i] {
 			return a[i] < b[i]

@@ -211,3 +211,45 @@ func TestTabStillExpandsInTheList(t *testing.T) {
 		t.Errorf("Shift-Tab should collapse editor, rows %q", names(m.rows))
 	}
 }
+
+// TestFocusPointThroughCentre replays moving through the centre window: the
+// focus should come out in line with where it went in.
+func TestFocusPointThroughCentre(t *testing.T) {
+	ws := windows(12)
+	mv := &matrixView{session: &tmux.Session{Windows: ws}, cells: matrixLayout(ws, 8, 240, 60)}
+	// A 4x4 grid of 60x15 cells; the centre takes columns 1-2, rows 1-2.
+	at := func(col, row int) int {
+		for i, b := range mv.cells {
+			if b.x0 == col*60 && b.y0 == row*15 && i != 8 {
+				return i
+			}
+		}
+		t.Fatalf("no window at column %d, row %d", col, row)
+		return -1
+	}
+	tests := []struct {
+		name   string
+		from   int
+		dx, dy int
+		want   int
+	}{
+		{"up from below the right half", at(2, 3), 0, -1, at(2, 0)},
+		{"up from below the left half", at(1, 3), 0, -1, at(1, 0)},
+		{"down from above the right half", at(2, 0), 0, 1, at(2, 3)},
+		{"right from left of the lower half", at(0, 2), 1, 0, at(3, 2)},
+		{"left from right of the upper half", at(3, 1), -1, 0, at(0, 2)}, // (0, 1) is empty
+		{"left from right of the lower half", at(3, 2), -1, 0, at(0, 2)},
+	}
+	for _, tt := range tests {
+		mv.focus, mv.px, mv.py = tt.from, -1, -1
+		mv.move(tt.dx, tt.dy)
+		if mv.focus != 8 {
+			t.Errorf("%s: first move should reach the centre, got w%d", tt.name, mv.focus)
+			continue
+		}
+		mv.move(tt.dx, tt.dy)
+		if mv.focus != tt.want {
+			t.Errorf("%s: second move got w%d %+v, want w%d %+v", tt.name, mv.focus, mv.cells[mv.focus], tt.want, mv.cells[tt.want])
+		}
+	}
+}

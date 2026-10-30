@@ -332,7 +332,7 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 
 | Key | Action |
 |---|---|
-| arrows, `h` `j` `k` `l` | move the focus to the next window that way: of the windows beyond the focused one, those beside it (overlapping it across the direction) first, then the closest, then the best aligned. Comparing boxes, not centre points, keeps the large centre window reachable from all around it. With nothing that way, the focus wraps to the farthest window the other way that is beside it. |
+| arrows, `h` `j` `k` `l` | move the focus to the next window that way. A *focus point* inside the focused window remembers where the focus came in: moving up or down keeps its column, left or right its row, so passing through the large centre window comes out in line with where it went in (up twice from the window under the centre's right half reaches the one above that half). Of the windows beyond the focused one, those in line with the point come first, then those beside the focused window, then the closest, then the best aligned. With nothing that way, the focus wraps around to the farthest window the other way. Moving the focus any other way puts the point in the middle of the new window. |
 | `Tab` / `Shift-Tab` | next / previous window by number, wrapping around |
 | `0` … `9` | focus the window with that number; digits typed within a second of each other combine (`1` `7` is window 17), and a digit that makes no window number starts a new one |
 | `Home` / `End` | first / last window |
