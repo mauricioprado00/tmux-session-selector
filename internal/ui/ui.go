@@ -457,6 +457,18 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		}
 	case 'T':
 		m.tags = nil
+	case 'm':
+		if n := m.selected(); n != nil {
+			if err := m.tmux.Mark(n.target()); err != nil {
+				m.status = err.Error()
+			}
+			return m.reload(), nil, nil
+		}
+	case 'M':
+		if err := m.tmux.ClearMark(); err != nil {
+			m.status = err.Error()
+		}
+		return m.reload(), nil, nil
 	case 'X':
 		if targets, what := m.actionTargets(); len(targets) > 0 {
 			m.confirm = &confirmation{
@@ -913,6 +925,7 @@ var helpText = []string{
 	"  ? or F1        this help (? only when the query is empty)",
 	"  Alt-x          kill the selected session, window or pane (asks y/n)",
 	"  Alt-t / Alt-T  tag or untag the selected row / untag all; Ctrl-T tags all",
+	"  Alt-m / Alt-M  set / clear tmux's marked pane (for join-pane etc.)",
 	"  Alt-X / Alt-:  kill / run a command (%% is the target) on each tagged",
 	"                 item, or on the selected one if none is tagged",
 	"  Alt-o / Alt-r  sort by index, name or time (recent first); reverse",

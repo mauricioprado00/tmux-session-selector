@@ -211,3 +211,25 @@ func TestTags(t *testing.T) {
 		t.Errorf("Esc should close the prompt and keep the query")
 	}
 }
+
+func TestMark(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "one")
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "two")
+	m := liveModel(t, tm)
+	marked := func() string {
+		return tmuxRun(t, tm, "list-panes", "-a", "-F", "#{?pane_marked,#{window_name},}")
+	}
+	m.selectRow(t, "two")
+	m.handle(alt('m'))
+	if got := marked(); got != "two" {
+		t.Fatalf("marked pane is in %q, want two", got)
+	}
+	if !strings.Contains(m.rowText(m.selected()), "two-M") && !strings.Contains(m.rowText(m.selected()), "twoM") {
+		t.Errorf("row should show the M flag: %q", m.rowText(m.selected()))
+	}
+	m.handle(alt('M'))
+	if got := marked(); got != "" {
+		t.Errorf("Alt-M should clear the mark, still in %q", got)
+	}
+}

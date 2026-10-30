@@ -311,6 +311,19 @@ func (t Tmux) Kill(target Target) error {
 	return err
 }
 
+// Mark makes target's pane (the active one of a window or session) the
+// marked pane, the default source of join-pane, swap-pane and move-pane.
+func (t Tmux) Mark(target Target) error {
+	_, err := t.Run("select-pane", "-m", "-t", target.String())
+	return err
+}
+
+// ClearMark clears the marked pane.
+func (t Tmux) ClearMark() error {
+	_, err := t.Run("select-pane", "-M")
+	return err
+}
+
 // Capture returns the screens of panes, keyed by pane id. All panes are
 // captured in one tmux invocation; after each, display-message prints a
 // marker line carrying the pane's cursor position.

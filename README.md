@@ -110,6 +110,7 @@ The commands of tmux's own chooser work on the same letters with **Alt**
 | `Alt-0` … `Alt-9` | jump to the row with that number on the left |
 | `Alt-x` | kill the selected session, window or pane (asks y/n) |
 | `Alt-t` / `Alt-T` / `Ctrl-T` | tag or untag the selected row / untag all / tag every match |
+| `Alt-m` / `Alt-M` | set / clear tmux's marked pane |
 | `Alt-X` | kill the tagged items (or the selected one), asking first |
 | `Alt-:` | run a tmux command on each tagged item; `%%` is the target |
 | `Alt-o` | sort by index (creation order), name, or time (most recent first) |
