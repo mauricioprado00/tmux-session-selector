@@ -67,8 +67,8 @@ func tmuxBinding(bind bool, key, open, config string, args []string) int {
 		fmt.Fprintln(os.Stderr, "tmux-session-selector: -key must be a tmux key name, such as w, W or C-s")
 		return 2
 	}
-	if open != "popup" && open != "window" {
-		fmt.Fprintln(os.Stderr, "tmux-session-selector: -open must be popup or window")
+	if !slices.Contains(tmuxconf.Opens, open) {
+		fmt.Fprintln(os.Stderr, "tmux-session-selector: -open must be one of "+strings.Join(tmuxconf.Opens, ", "))
 		return 2
 	}
 	self, err := os.Executable()
@@ -76,10 +76,10 @@ func tmuxBinding(bind bool, key, open, config string, args []string) int {
 		return fail(err)
 	}
 	version, _ := tm.Run("-V")
-	b := tmuxconf.Binding{Key: key, Argv: append([]string{self}, args...), Popup: open == "popup"}
-	if b.Popup && !tmuxconf.HasPopup(version) {
-		b.Popup = false
-		fmt.Printf("%s has no popups (they came in tmux 3.2), so the selector opens in a window.\n", strings.TrimSpace(version))
+	b := tmuxconf.Binding{Key: key, Argv: append([]string{self}, args...), Open: open}
+	if supported, note := tmuxconf.Supported(open, version); note != "" {
+		b.Open, b.Border = supported, supported == tmuxconf.Full
+		fmt.Printf("%s: %s.\n", strings.TrimSpace(version), note)
 	}
 	live, err := tmuxconf.Install(tm, config, b)
 	if err != nil {
@@ -126,7 +126,7 @@ func run() int {
 	bind := flag.Bool("tmux-bind", false, "bind the selector to a key in tmux (see -key and -config)\nand exit; arguments after -- go into the bound command")
 	unbind := flag.Bool("tmux-unbind", false, "remove the binding -tmux-bind added, and exit")
 	key := flag.String("key", "w", "with -tmux-bind: the key, after tmux's prefix; w replaces tmux's chooser")
-	open := flag.String("open", "popup", "with -tmux-bind: open the selector in a popup over the current window,\nor in a window of its own that fills the screen")
+	open := flag.String("open", "popup", "with -tmux-bind: popup (over the current window), full (a borderless popup\ncovering the whole terminal) or window (a new tmux window)")
 	config := flag.String("config", "", "with -tmux-bind or -tmux-unbind: the tmux configuration file\n(default: the one tmux reads, such as ~/.tmux.conf)")
 	flag.Parse()
 

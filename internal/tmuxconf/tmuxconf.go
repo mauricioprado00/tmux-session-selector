@@ -42,21 +42,46 @@ func DefaultPath(home, xdgConfigHome string) string {
 
 // Binding is the selector's key binding in tmux's prefix table.
 type Binding struct {
-	Key   string   // e.g. "w"
-	Argv  []string // the selector: its absolute path, then any arguments
-	Popup bool     // open in display-popup (tmux 3.2+), else in a new window
+	Key  string   // e.g. "w"
+	Argv []string // the selector: its absolute path, then any arguments
+	Open string   // Popup, Full or Window
+	// Border keeps the border of a Full popup, for tmux 3.2, which cannot
+	// draw one without.
+	Border bool
 	// Previous is what the key did before, as list-keys prints it, so that
 	// removing the binding can restore it in the running server.
 	Previous string
 }
 
+// Where the bound selector opens.
+const (
+	// Popup is a popup over the current window, 80% of it each way.
+	Popup = "popup"
+	// Full is a borderless popup covering the whole terminal, status line
+	// included: it looks like a window of its own, but none is created.
+	Full = "full"
+	// Window is a new tmux window, closed when the selector exits: the only
+	// choice before tmux 3.2, which brought popups.
+	Window = "window"
+)
+
+// Opens are the values Binding.Open takes.
+var Opens = []string{Popup, Full, Window}
+
 // Args is the binding as tmux command arguments.
 func (b Binding) Args() []string {
 	cmd := shellJoin(b.Argv)
-	if b.Popup {
-		return []string{"bind-key", "-T", "prefix", b.Key, "display-popup", "-E", "-w", "80%", "-h", "80%", cmd}
+	bind := []string{"bind-key", "-T", "prefix", b.Key}
+	switch b.Open {
+	case Window:
+		return append(bind, "new-window", "-n", "select", cmd)
+	case Full:
+		if b.Border {
+			return append(bind, "display-popup", "-E", "-w", "100%", "-h", "100%", cmd)
+		}
+		return append(bind, "display-popup", "-E", "-B", "-w", "100%", "-h", "100%", cmd)
 	}
-	return []string{"bind-key", "-T", "prefix", b.Key, "new-window", "-n", "select", cmd}
+	return append(bind, "display-popup", "-E", "-w", "80%", "-h", "80%", cmd)
 }
 
 // Line is the binding as a configuration file line.
@@ -205,16 +230,29 @@ func currentBinding(tm tmux.Tmux, key string) string {
 	return strings.TrimSpace(out)
 }
 
-// HasPopup reports whether tmux's version, as tmux -V prints it (e.g.
-// "tmux 3.4" or "tmux next-3.5"), has display-popup, which came in 3.2.
-func HasPopup(version string) bool {
+// Supported returns how b.Open can be done by tmux of the given version, as
+// tmux -V prints it (e.g. "tmux 3.4" or "tmux next-3.5"), with a note if
+// that is not as asked: popups came in tmux 3.2, borderless ones in 3.3.
+func Supported(open, version string) (string, string) {
+	switch {
+	case open != Window && !atLeast(version, 3, 2):
+		return Window, "popups came in tmux 3.2, so the selector opens in a window"
+	case open == Full && !atLeast(version, 3, 3):
+		return Full, "borderless popups came in tmux 3.3, so the full-screen popup has a border"
+	}
+	return open, ""
+}
+
+// atLeast reports whether version is major.minor or later; an unknown one,
+// such as a development build, counts as recent.
+func atLeast(version string, major, minor int) bool {
 	m := regexp.MustCompile(`(\d+)\.(\d+)`).FindStringSubmatch(version)
 	if m == nil {
-		return true // unknown, such as a development build: assume a recent one
+		return true
 	}
-	major, _ := strconv.Atoi(m[1])
-	minor, _ := strconv.Atoi(m[2])
-	return major > 3 || (major == 3 && minor >= 2)
+	ma, _ := strconv.Atoi(m[1])
+	mi, _ := strconv.Atoi(m[2])
+	return ma > major || (ma == major && mi >= minor)
 }
 
 func read(path string) (content string, mode fs.FileMode, err error) {

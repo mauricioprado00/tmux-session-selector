@@ -48,14 +48,17 @@ Let the binary do it:
 ```sh
 tmux-session-selector -tmux-bind                  # prefix + w, replacing tmux's chooser
 tmux-session-selector -tmux-bind -key W           # or another key
-tmux-session-selector -tmux-bind -open window     # a full-screen window instead of a popup
+tmux-session-selector -tmux-bind -open full       # a borderless popup over the whole terminal
+tmux-session-selector -tmux-bind -open window     # a real tmux window (for tmux before 3.2)
 tmux-session-selector -tmux-bind -- -normal       # arguments after -- go into the binding
 tmux-session-selector -tmux-unbind                # remove it again
 ```
 
-With `-open window` the selector runs in a temporary window, which it leaves
-out of the list and the matrix, so it never previews itself; the window you
-came from counts as the current one.
+`-open full` looks like a window of its own but is a popup covering the whole
+terminal, so no window is created and none shows in tmux's status line. With
+`-open window` the selector runs in a real, temporary window, which it leaves
+out of the list and the matrix; the window you came from counts as the
+current one.
 
 It writes a marked block to the configuration file tmux reads (the first of
 `~/.tmux.conf`, `$XDG_CONFIG_HOME/tmux/tmux.conf`, `~/.config/tmux/tmux.conf`
@@ -169,7 +172,7 @@ tmux-session-selector [flags] [initial query]
   -tmux-bind     bind the selector in tmux and exit (-key, -config; args after --)
   -tmux-unbind   remove that binding and exit
   -key KEY       the key for -tmux-bind, after tmux's prefix (default w)
-  -open MODE     for -tmux-bind: popup (default) or window (fills the screen)
+  -open MODE     for -tmux-bind: popup (default), full (whole terminal) or window
   -config PATH   the tmux configuration file for -tmux-bind / -tmux-unbind
   -zoom          zoom the selector's pane while it runs (for a new-window or
                  split binding; has no effect in a popup)

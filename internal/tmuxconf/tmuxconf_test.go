@@ -28,14 +28,14 @@ func TestDefaultPath(t *testing.T) {
 }
 
 func TestAddRemove(t *testing.T) {
-	b := Binding{Key: "w", Argv: []string{"/opt/my tools/sel", "-normal"}, Popup: true,
+	b := Binding{Key: "w", Argv: []string{"/opt/my tools/sel", "-normal"}, Open: Popup,
 		Previous: "bind-key -T prefix w choose-tree -Zw"}
 	for _, original := range []string{"", "set -g mouse on\n", "set -g mouse on", "a\n\n"} {
 		added := Add(original, b)
 		if !strings.Contains(added, b.Line()) || strings.Count(added, begin) != 1 {
 			t.Fatalf("Add(%q) = %q", original, added)
 		}
-		again := Add(added, Binding{Key: "W", Argv: []string{"/sel"}, Popup: true})
+		again := Add(added, Binding{Key: "W", Argv: []string{"/sel"}, Open: Popup})
 		if strings.Count(again, begin) != 1 || !strings.Contains(again, "# key: W") {
 			t.Errorf("adding twice should replace the block: %q", again)
 		}
@@ -57,22 +57,44 @@ func TestAddRemove(t *testing.T) {
 }
 
 func TestLine(t *testing.T) {
-	b := Binding{Key: "C-s", Argv: []string{"/home/me/my bin/sel", "-sort", "time", "it's $HOME"}, Popup: true}
+	b := Binding{Key: "C-s", Argv: []string{"/home/me/my bin/sel", "-sort", "time", "it's $HOME"}, Open: Popup}
 	want := `bind-key -T prefix C-s display-popup -E -w 80% -h 80% "'/home/me/my bin/sel' -sort time 'it'\\''s \$HOME'"`
 	if got := b.Line(); got != want {
 		t.Errorf("Line =\n%s\nwant\n%s", got, want)
 	}
-	b.Popup = false
+	b.Open = Window
 	if got := b.Line(); !strings.Contains(got, "new-window -n select ") {
-		t.Errorf("without popups: %s", got)
+		t.Errorf("window: %s", got)
+	}
+	b.Open = Full
+	if got := b.Line(); !strings.Contains(got, "display-popup -E -B -w 100% -h 100% ") {
+		t.Errorf("full: %s", got)
+	}
+	b.Border = true
+	if got := b.Line(); !strings.Contains(got, "display-popup -E -w 100% -h 100% ") {
+		t.Errorf("full with a border: %s", got)
 	}
 }
 
-func TestHasPopup(t *testing.T) {
-	for v, want := range map[string]bool{"tmux 3.4": true, "tmux 3.2a": true, "tmux 3.1c": false,
-		"tmux 2.9": false, "tmux next-3.5": true, "tmux master": true, "tmux 4.0": true} {
-		if got := HasPopup(v); got != want {
-			t.Errorf("HasPopup(%q) = %v", v, got)
+func TestSupported(t *testing.T) {
+	tests := []struct {
+		open, version, want string
+		note                bool
+	}{
+		{Popup, "tmux 3.4", Popup, false},
+		{Full, "tmux 3.4", Full, false},
+		{Full, "tmux 3.3a", Full, false},
+		{Full, "tmux 3.2a", Full, true}, // with a border
+		{Full, "tmux 3.1c", Window, true},
+		{Popup, "tmux 2.9", Window, true},
+		{Window, "tmux 2.9", Window, false},
+		{Full, "tmux next-3.5", Full, false},
+		{Full, "tmux master", Full, false},
+	}
+	for _, tt := range tests {
+		got, note := Supported(tt.open, tt.version)
+		if got != tt.want || (note != "") != tt.note {
+			t.Errorf("Supported(%s, %q) = %s, %q", tt.open, tt.version, got, note)
 		}
 	}
 }
@@ -96,7 +118,7 @@ func TestInstallUninstall(t *testing.T) {
 	original := "set -g mouse on\n"
 	os.WriteFile(config, []byte(original), 0o600)
 
-	b := Binding{Key: "w", Argv: []string{"/opt/sel tool/sel"}, Popup: true}
+	b := Binding{Key: "w", Argv: []string{"/opt/sel tool/sel"}, Open: Popup}
 	if live, err := Install(tm, config, b); err != nil || !live {
 		t.Fatalf("Install = %v, %v", live, err)
 	}
@@ -116,7 +138,7 @@ func TestInstallUninstall(t *testing.T) {
 	}
 
 	// Moving to another key restores w and keeps one block.
-	if _, err := Install(tm, config, Binding{Key: "W", Argv: []string{"/sel"}, Popup: true}); err != nil {
+	if _, err := Install(tm, config, Binding{Key: "W", Argv: []string{"/sel"}, Open: Popup}); err != nil {
 		t.Fatal(err)
 	}
 	if got := binding("w"); got != "bind-key -T prefix w choose-tree -Zw" {

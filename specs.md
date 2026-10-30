@@ -488,11 +488,21 @@ The temporary window closes itself when the program exits.
   binds `KEY` (default `w`, replacing tmux's chooser) in tmux's prefix table
   to the selector, given by the binary's absolute path (`os.Executable`), so
   tmux's `PATH` does not matter; `ARGS` are added to the bound command.
-  `--open popup` (the default) uses `display-popup -E -w 80% -h 80%`, over the
-  current window; `--open window` uses `new-window -n select`, a window of its
-  own that fills the screen and closes when the selector exits. A popup is
-  only possible when `tmux -V` is 3.2 or later (or not a release number);
-  otherwise a window is used, and the output says so. Words are quoted for the shell and then for tmux's
+  `--open` says where it opens:
+  - `popup` (the default): `display-popup -E -w 80% -h 80%`, over the current
+    window.
+  - `full`: `display-popup -E -B -w 100% -h 100%`, a borderless popup covering
+    the whole terminal, status line included. It looks like a window of its
+    own, but none is created, so nothing appears in the window list and the
+    selector never previews itself.
+  - `window`: `new-window -n select`, a real window, closed when the selector
+    exits; for tmux before 3.2. The selector leaves this window out of what it
+    shows (§5).
+
+  Popups came in tmux 3.2 and borderless ones in 3.3 (from `tmux -V`; a
+  version that is not a release number counts as recent). On older tmux,
+  `popup` and `full` fall back to `window`, and on 3.2 `full` keeps its
+  border; the output says so. Words are quoted for the shell and then for tmux's
   configuration syntax, which expands `$VARIABLES` inside double quotes.
 - The configuration file is `--config`, or else the one tmux reads: the first
   that exists of `~/.tmux.conf`, `$XDG_CONFIG_HOME/tmux/tmux.conf`,
@@ -531,7 +541,7 @@ tmux-session-selector [flags] [initial query]
   --tmux-bind     bind the selector in tmux and exit; see §9.3
   --tmux-unbind   remove that binding and exit
   --key KEY       the key for --tmux-bind, after the prefix (default w)
-  --open MODE     for --tmux-bind: popup (default) or window
+  --open MODE     for --tmux-bind: popup (default), full or window
   --config PATH   the tmux configuration file for --tmux-bind / --tmux-unbind
   --zoom          zoom the pane the selector runs in while it runs (tmux's
                   -Z); see below
