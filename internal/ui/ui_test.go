@@ -307,3 +307,21 @@ func TestSort(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectStart(t *testing.T) {
+	m := &model{roots: testTree(), total: 7}
+	m.setQuery()
+	for _, r := range "blog" {
+		m.handle(typed(r))
+	}
+	m.handle(alt('h'))
+	if n := m.selected(); n.kind != paneRow || n.pane.ID != "%2" || len(m.query) != 0 {
+		t.Errorf("Alt-h selected %+v with query %q; want pane %%2 and no query", n, string(m.query))
+	}
+	m.roots[0].children[0].expanded = false
+	m.handle(event{key: keyEnd})
+	m.handle(alt('H'))
+	if n := m.selected(); n.kind != paneRow || n.pane.ID != "%2" {
+		t.Errorf("Alt-H should expand the window and select %%2, got %+v", n)
+	}
+}

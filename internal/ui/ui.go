@@ -385,6 +385,8 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		m.order = (m.order + 1) % len(SortOrders)
 		sortTree(m.roots, m.order, m.reverse)
 		m.refresh()
+	case 'h', 'H':
+		m.selectStart()
 	case 'r':
 		m.reverse = !m.reverse
 		sortTree(m.roots, m.order, m.reverse)
@@ -399,6 +401,33 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		}
 	}
 	return false, nil, nil
+}
+
+// selectStart selects the row of the pane the selector was started from,
+// expanding its window and clearing the query if they hide it.
+func (m *model) selectStart() {
+	var start *node
+	for nodes := m.roots; nodes != nil; {
+		var next []*node
+		for _, n := range nodes {
+			if n.current {
+				start, next = n, n.children
+			}
+		}
+		nodes = next
+	}
+	if start == nil {
+		return // not started from inside tmux
+	}
+	for p := start.parent; p != nil; p = p.parent {
+		p.expanded = true
+	}
+	m.refresh()
+	if i := m.indexOf(start); i < 0 || m.rows[i].context {
+		m.query = nil
+		m.setQuery()
+	}
+	m.sel = m.indexOf(start)
 }
 
 // kill kills targets, then reloads the tree, keeping the selection at the
@@ -679,6 +708,7 @@ var helpText = []string{
 	"  ? or F1        this help (? only when the query is empty)",
 	"  Alt-x          kill the selected session, window or pane (asks y/n)",
 	"  Alt-o / Alt-r  sort by index, name or time (recent first); reverse",
+	"  Alt-h          back to the pane the selector was started from",
 	"  < >            scroll the windows of a session preview (empty query)",
 	"  Esc            close (this help, then the selector)",
 	"",

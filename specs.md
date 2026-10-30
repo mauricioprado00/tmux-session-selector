@@ -226,6 +226,7 @@ Alt-O.
 | `Alt-x` | `x` | Kill the selected session, window or pane, after a `y/n` question on the prompt line (`kill-session`, `kill-window` or `kill-pane`). The tree is reloaded and the selection stays at the same position. |
 | `Alt-o` (or `Alt-O`) | `O` | Change the sort order: index → name → time (§5). |
 | `Alt-r` | `r` | Reverse the sort order. |
+| `Alt-h` (or `Alt-H`) | `H` | Select the pane the selector was started from, expanding its window, and clearing the query if it hides that pane. Does nothing outside tmux. |
 
 While a question is shown, `y` or `Y` confirms and any other key cancels.
 

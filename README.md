@@ -110,6 +110,7 @@ The commands of tmux's own chooser work on the same letters with **Alt**
 | `Alt-x` | kill the selected session, window or pane (asks y/n) |
 | `Alt-o` | sort by index (creation order), name, or time (most recent first) |
 | `Alt-r` | reverse the sort |
+| `Alt-h` | back to the pane you started from |
 
 Command-line flags:
 
