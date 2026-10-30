@@ -384,7 +384,7 @@ func TestMenu(t *testing.T) {
 	for _, it := range m.menu.items {
 		labels += it.label + "|"
 	}
-	if labels != "Select|Expand|Mark||Tag|Tag All|Tag None||Kill|Kill Tagged||Cancel|" {
+	if labels != "Select|Expand|Mark|Matrix View||Tag|Tag All|Tag None||Kill|Kill Tagged||Cancel|" {
 		t.Errorf("items = %s", labels)
 	}
 	m.handle(event{key: keyDown})
@@ -403,14 +403,14 @@ func TestMenu(t *testing.T) {
 	var b strings.Builder
 	m.menu.draw(&b, 80, 24)
 	// Click the "Kill" item: the menu's first item row is one below its top.
-	m.handle(event{key: keyMouse, x: m.menu.x + 2, y: m.menu.y + 1 + 8, press: true})
+	m.handle(event{key: keyMouse, x: m.menu.x + 2, y: m.menu.y + 1 + 9, press: true})
 	if m.confirm == nil || !strings.Contains(m.confirm.question, "session api") {
 		t.Errorf("clicking Kill should ask to kill api, got %+v", m.confirm)
 	}
 	m.handle(typed('n'))
 
 	rightClick(10, 2)
-	m.handle(typed('z'))
+	m.handle(typed('w'))
 	if m.menu != nil || len(m.query) != 0 {
 		t.Error("another key should close the menu without typing")
 	}

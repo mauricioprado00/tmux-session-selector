@@ -90,6 +90,8 @@ type model struct {
 	input *inputPrompt
 	// The right-click menu, while open.
 	menu *menu
+	// The matrix view, while open.
+	matrix *matrixView
 	// Tagged rows, by target, so tags survive reloading the tree.
 	tags map[string]tmux.Target
 	// The last left click, to detect a double click.
@@ -195,7 +197,7 @@ func Run(o Options) (*tmux.Target, error) {
 			}
 		case <-winch:
 		case <-tick:
-			if !m.preview || m.help {
+			if m.matrix == nil && (!m.preview || m.help) {
 				continue
 			}
 			m.screens = map[string]screen{}
@@ -331,6 +333,9 @@ func (m *model) move(d int) {
 func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if ev.key != keyMouse || ev.press {
 		m.status = ""
+	}
+	if m.matrix != nil {
+		return m.matrixKey(ev)
 	}
 	if m.menu != nil {
 		return m.menuKey(ev)
@@ -483,6 +488,8 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		m.preview = !m.preview
 	case keyHelp:
 		m.help, m.helpTop = true, 0
+	case keyMatrix:
+		m.openMatrix()
 	case keyCancel:
 		return true, nil, nil
 	case keyEnter:
@@ -898,6 +905,10 @@ func (m *model) render(width, height int) string {
 	m.height = height
 	m.hits = nil
 	m.previewH = 0
+	if m.matrix != nil {
+		m.drawMatrix(&b, width, height)
+		return b.String()
+	}
 
 	previewH := 0
 	if m.preview && height >= 12 {
@@ -1072,8 +1083,8 @@ func (m *model) rowContent(n *node) []span {
 
 // footerSearch and footerNormal are the key hints on the bottom line.
 const (
-	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^R regex  ^V preview  Esc quit  ? help"
-	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  / search  ? help  q quit"
+	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^O matrix  ^R regex  ^V preview  Esc quit  ? help"
+	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  ^O matrix  / search  ? help  q quit"
 )
 
 // drawHelp draws the help in height rows from screen row y. When it does
@@ -1164,6 +1175,7 @@ var helpText = []string{
 	"| Ctrl-T\ttag every match",
 	"| Ctrl-R\tswitch between words and regex",
 	"| Ctrl-V\tshow or hide the preview",
+	"| Ctrl-O\tmatrix view of the selected session (see below)",
 	"| F1\tthis help",
 	"| Esc\tclose (this help, then the selector)",
 	"",
@@ -1196,6 +1208,15 @@ var helpText = []string{
 	"| < >\tscroll a session preview",
 	"| / f\tback to search mode",
 	"| q\tquit",
+	"",
+	"# Matrix view (Ctrl-O)",
+	"All windows of the session at once, live, for watching them. From a",
+	"session row they share the screen evenly; from a window row that window",
+	"takes the middle half and the others surround it.",
+	"| ←↑↓→  h j k l\tmove the focus",
+	"| Enter  double-click\tswitch to the window in focus",
+	"| click  wheel\tfocus a window / the next or previous one",
+	"| Esc  q  Ctrl-O\tback to the list",
 	"",
 	"# Mouse",
 	"| click\tselect",

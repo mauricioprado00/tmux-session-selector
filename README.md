@@ -99,6 +99,7 @@ activity, `!` bell (in red), `~` silence, `M` marked pane, `Z` zoomed.
 | `Ctrl-R` | switch between words and regex mode |
 | `Ctrl-V` | show or hide the pane preview |
 | `Ctrl-/` | switch between search and normal mode |
+| `Ctrl-O` | matrix view: every window of the session at once, live |
 | `?` (empty query), `F1` | help panel with the query syntax and keys |
 | `<` / `>` (empty query) | scroll the windows of a session preview |
 | `Enter` | jump |
@@ -151,6 +152,14 @@ tmux-session-selector [flags] [initial query]
 
 An initial query gives a pre-filtered view, for example
 `bind W display-popup -E "tmux-session-selector s:work"`.
+
+### Matrix view
+
+`Ctrl-O` shows every window of the selected session at once, live, for
+watching them. From a session row they share the screen evenly; from a window
+row that window takes the middle half and the others surround it. Arrows (or
+`hjkl`) move the focus, `Enter` switches to the window in focus, `Esc` or `q`
+goes back to the list.
 
 Run outside tmux, it attaches to the selected session.
 

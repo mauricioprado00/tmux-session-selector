@@ -196,6 +196,7 @@ Modelled on tmux's own `choose-tree` preview:
 | `Ctrl-R` | toggle between `words` and `regex` mode |
 | `Ctrl-V` | toggle the preview |
 | `Ctrl-/` | switch between search and normal mode (§6.8) |
+| `Ctrl-O` | open the matrix view of the selected row's session (§6.9) |
 | `Ctrl-B` / `Ctrl-F`, `Ctrl-D` | page up / down, half a page down |
 | `?` (empty query) / `F1` | open the help panel |
 | `<` / `>` (empty query) | scroll the windows of a session preview |
@@ -227,7 +228,7 @@ Modifier keys are ignored; the middle button does nothing.
 
 The right-click menu has the items of tmux's chooser menu: Select,
 Expand (or Collapse), Mark, Tag (or Untag), Tag All, Tag None, Kill,
-Kill Tagged, Cancel. Each shows the key that does the same without the menu.
+Kill Tagged, Cancel, plus Matrix View (§6.9, letter `z`). Each shows the key that does the same without the menu.
 It opens at the pointer, moved to fit on screen, and is drawn over the list
 and preview. While it is open: a click on an item, `Up`/`Down` and `Enter`,
 or tmux's letter for the item (`t`, `T`, `a`, `m`, `x`, `X`, `q`, `l`/`h`)
@@ -297,6 +298,35 @@ Keys that are not letters work the same in both modes (arrows, `Enter`,
 page, Alt-+ / Alt--), except that in normal mode `Ctrl-U` is half a page up
 instead of clearing the query, and `Backspace` / `Ctrl-W` do nothing. The
 right-click menu shows the key of the current mode for each item.
+
+### 6.9 Matrix view
+
+`Ctrl-O` (both modes, or Matrix View in the right-click menu) replaces the
+list with every window of the selected row's session at once, for watching
+them. Each window is drawn as in the preview (§6.4): its panes in their
+layout, in colour, and live, captured again every `--refresh`.
+
+- From a **session row**, the windows share the screen evenly in rows; the
+  number of columns is the one that shows the windows largest, and a shorter
+  last row is spread across the full width. The session's active window has
+  the focus.
+- From a **window or pane row**, that window takes the middle half of the
+  screen each way (50% × 50%) and has the focus; the other windows go around
+  it, clockwise from the top left. The grid is 4 × 4 cells (12 around the
+  centre), or 8 × 8 (48) and so on when there are more windows; the layer
+  next to the centre fills first.
+
+The top line names the session and the layout; the bottom line lists the
+keys. The window in focus has a bold yellow frame and a reversed `▶` label.
+
+| Key | Action |
+|---|---|
+| arrows, `h` `j` `k` `l` | move the focus to the nearest window that way |
+| `Enter`, double-click | switch to the window in focus, as choosing it in the list does (`--command` applies) |
+| click / wheel | focus a window / the next or previous one |
+| `Esc`, `q`, `Ctrl-O` | back to the list |
+
+If switching fails, the matrix closes and the error shows on the list.
 
 ## 7. Filtering
 
