@@ -201,6 +201,19 @@ Modifier keys are ignored; other buttons do nothing. In a popup or pane,
 tmux forwards mouse events only when its `mouse` option is on (checked with
 tmux 3.4, in both a window and a `display-popup`).
 
+### 6.7 Commands
+
+The commands of tmux's chooser (`choose-tree`) are available on the same
+letters pressed with **Alt**, since plain letters and digits are query text.
+A terminal sends Alt-x as `ESC x`; `ESC O` not followed by a known SS3 key is
+Alt-O.
+
+| Key | tmux | Action |
+|---|---|---|
+| `Alt-x` | `x` | Kill the selected session, window or pane, after a `y/n` question on the prompt line (`kill-session`, `kill-window` or `kill-pane`). The tree is reloaded and the selection stays at the same position. |
+
+While a question is shown, `y` or `Y` confirms and any other key cancels.
+
 ## 7. Filtering
 
 ### 7.1 Searchable text

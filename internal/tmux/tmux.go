@@ -254,6 +254,21 @@ type Screen struct {
 	CursorX, CursorY int
 }
 
+// Kill kills the target: its pane if it names one, else its window, else
+// its session.
+func (t Tmux) Kill(target Target) error {
+	var err error
+	switch {
+	case target.Pane != "":
+		_, err = t.Run("kill-pane", "-t", target.Pane)
+	case target.Window != "":
+		_, err = t.Run("kill-window", "-t", target.Window)
+	default:
+		_, err = t.Run("kill-session", "-t", target.Session)
+	}
+	return err
+}
+
 // Capture returns the screens of panes, keyed by pane id. All panes are
 // captured in one tmux invocation; after each, display-message prints a
 // marker line carrying the pane's cursor position.

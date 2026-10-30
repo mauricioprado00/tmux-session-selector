@@ -58,9 +58,17 @@ type model struct {
 	// The first window shown in a session preview, and for which session.
 	winOffset    int
 	winOffsetFor *tmux.Session
+	// A question waiting for y or n on the prompt line.
+	confirm *confirmation
 	// The last left click, to detect a double click.
 	lastClickRow int
 	lastClickAt  time.Time
+}
+
+// confirmation is a yes/no question; action runs on y.
+type confirmation struct {
+	question string
+	action   func() (done bool, target *tmux.Target, err error)
 }
 
 // doubleClick is the longest gap between the clicks of a double click.
@@ -248,6 +256,16 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if ev.key != keyMouse || ev.press {
 		m.status = ""
 	}
+	if c := m.confirm; c != nil {
+		if ev.key == keyMouse && !ev.press {
+			return false, nil, nil
+		}
+		m.confirm = nil
+		if ev.key == keyRune && (ev.r == 'y' || ev.r == 'Y') {
+			return c.action()
+		}
+		return false, nil, nil
+	}
 	if m.help {
 		if ev.key == keyMouse {
 			if ev.press && ev.button == 0 {
@@ -342,7 +360,42 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		}
 	case keyMouse:
 		return m.mouse(ev)
+	case keyAlt:
+		return m.command(ev.r)
 	}
+	return false, nil, nil
+}
+
+// command runs the tmux chooser command for key r, pressed with Alt.
+func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
+	switch r {
+	case 'x':
+		if n := m.selected(); n != nil {
+			t := n.target()
+			m.confirm = &confirmation{
+				question: "Kill " + n.describe() + "?",
+				action:   func() (bool, *tmux.Target, error) { return m.kill([]tmux.Target{t}) },
+			}
+		}
+	}
+	return false, nil, nil
+}
+
+// kill kills targets, then reloads the tree, keeping the selection at the
+// same position.
+func (m *model) kill(targets []tmux.Target) (done bool, target *tmux.Target, err error) {
+	idx := m.sel
+	for _, t := range targets {
+		if err := m.tmux.Kill(t); err != nil {
+			m.status = err.Error()
+			break
+		}
+	}
+	if err := m.load(); err != nil {
+		return true, nil, nil // the last session went, and the server with it
+	}
+	m.refresh()
+	m.sel = max(0, min(idx, len(m.rows)-1))
 	return false, nil, nil
 }
 
@@ -498,7 +551,10 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 		right = span{text: clean(m.queryErr), style: styleError}
 	}
 	hint := span{text: query}
-	if query == "" {
+	switch {
+	case m.confirm != nil:
+		hint = span{text: clean(m.confirm.question) + " (y/n)", style: styleConfirm}
+	case query == "":
 		hint = span{text: "type to filter · ? for help", style: styleDim}
 	}
 	gap := max(2, width-2-textWidth(hint.text)-textWidth(right.text))
@@ -572,6 +628,7 @@ var helpText = []string{
 	"  Ctrl-R         switch between words and regex",
 	"  Ctrl-V         show or hide the preview",
 	"  ? or F1        this help (? only when the query is empty)",
+	"  Alt-x          kill the selected session, window or pane (asks y/n)",
 	"  < >            scroll the windows of a session preview (empty query)",
 	"  Esc            close (this help, then the selector)",
 	"",

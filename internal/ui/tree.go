@@ -95,6 +95,17 @@ func tilde(path, home string) string {
 	return path
 }
 
+// describe names the row for a question such as "Kill …?".
+func (n *node) describe() string {
+	switch n.kind {
+	case sessionRow:
+		return "session " + n.name
+	case windowRow:
+		return "window " + strconv.Itoa(n.window.Index) + ": " + n.name
+	}
+	return "pane " + n.pane.ID + " (" + n.command + ")"
+}
+
 // target is where Enter on this row goes.
 func (n *node) target() tmux.Target {
 	t := tmux.Target{Session: n.session.ID}

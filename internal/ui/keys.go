@@ -27,11 +27,12 @@ const (
 	keyHelp
 	keyCancel
 	keyMouse
+	keyAlt
 )
 
 type event struct {
 	key key
-	r   rune // for keyRune
+	r   rune // for keyRune and keyAlt
 	// For keyMouse: the SGR button code (0 left, 64/65 wheel, plus modifier
 	// bits), the 0-based cell, and whether it is a press or a release.
 	button int
@@ -111,17 +112,24 @@ func decode(b []byte) []event {
 // returns the event, with key -1 if unknown, and the number of bytes used.
 func escape(b []byte) (event, int) {
 	unknown := event{key: -1}
-	if len(b) < 2 || (b[1] != '[' && b[1] != 'O') {
+	switch {
+	case len(b) < 2:
+		return event{key: keyCancel}, 1
+	case b[1] != '[' && b[1] != 'O':
+		// ESC before a printable character is that character with Alt.
+		if b[1] >= 0x20 && b[1] < 0x7f {
+			return event{key: keyAlt, r: rune(b[1])}, 2
+		}
 		return event{key: keyCancel}, 1
 	}
 	if b[1] == 'O' {
-		if len(b) < 3 {
-			return unknown, len(b)
+		// SS3 for a known key; otherwise Alt-O.
+		if len(b) >= 3 {
+			if k, ok := csiKeys[b[2]]; ok {
+				return event{key: k}, 3
+			}
 		}
-		if k, ok := csiKeys[b[2]]; ok {
-			return event{key: k}, 3
-		}
-		return unknown, 3
+		return event{key: keyAlt, r: 'O'}, 2
 	}
 	// CSI: parameter and intermediate bytes, then a final byte in 0x40–0x7e.
 	for i := 2; i < len(b); i++ {

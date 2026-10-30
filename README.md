@@ -99,6 +99,13 @@ dimmed does not match itself; it is there because something inside it does.
 | `Enter` | jump |
 | `Esc`, `Ctrl-C`, `Ctrl-G` | cancel |
 
+The commands of tmux's own chooser work on the same letters with **Alt**
+(plain letters are query text):
+
+| Key | Action |
+|---|---|
+| `Alt-x` | kill the selected session, window or pane (asks y/n) |
+
 Command-line flags:
 
 ```
