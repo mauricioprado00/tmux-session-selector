@@ -214,5 +214,11 @@ bind J display-popup -E "tmux-session-selector -command \"join-pane -h -s '%%'\"
 go test ./...   # the integration tests need tmux; they use their own server
 ```
 
+`scripts/play-session.sh` creates a tmux session named `play` (or
+`$PLAY_SESSION`) whose 13 windows print fake, moving output (logs, builds,
+tests, metrics, deploys, pods…), for trying the previews and the overview:
+13 is one centred window and a full ring of 12 around it.
+`scripts/play-session.sh kill` removes it.
+
 Pushing a `v*` tag builds the release archives and publishes a GitHub release.
 See [specs.md](specs.md) for the full specification.
