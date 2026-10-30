@@ -332,7 +332,10 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 
 | Key | Action |
 |---|---|
-| arrows, `h` `j` `k` `l` | move the focus to the nearest window that way |
+| arrows, `h` `j` `k` `l` | move the focus to the next window that way: of the windows beyond the focused one, those beside it (overlapping it across the direction) first, then the closest, then the best aligned. Comparing boxes, not centre points, keeps the large centre window reachable from all around it. With nothing that way, the focus wraps to the farthest window the other way that is beside it. |
+| `Tab` / `Shift-Tab` | next / previous window by number, wrapping around |
+| `0` … `9` | focus the window with that number; digits typed within a second of each other combine (`1` `7` is window 17), and a digit that makes no window number starts a new one |
+| `Home` / `End` | first / last window |
 | `Enter`, double-click | switch to the window in focus, as choosing it in the list does (`--command` applies) |
 | click / wheel | focus a window / the next or previous one |
 | `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |

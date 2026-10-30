@@ -400,6 +400,13 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if m.matrix != nil {
 		return m.matrixKey(ev)
 	}
+	// Outside the matrix, Tab and Shift-Tab expand and collapse.
+	switch ev.key {
+	case keyTab:
+		ev.key = keyExpand
+	case keyBackTab:
+		ev.key = keyCollapse
+	}
 	if m.menu != nil {
 		return m.menuKey(ev)
 	}
@@ -1276,7 +1283,10 @@ var helpText = []string{
 	"All windows of the session at once, live, for watching them. From a",
 	"session row they share the screen evenly; from a window row that window",
 	"takes the middle half and the others surround it.",
-	"| ←↑↓→  h j k l\tmove the focus",
+	"| ←↑↓→  h j k l\tmove the focus; past an edge it wraps around",
+	"| Tab  Shift-Tab\tnext / previous window by number",
+	"| 0 … 9\tfocus the window with that number (type 1 7 for 17)",
+	"| Home  End\tfirst / last window",
 	"| Enter  double-click\tswitch to the window in focus",
 	"| click  wheel\tfocus a window / the next or previous one",
 	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",

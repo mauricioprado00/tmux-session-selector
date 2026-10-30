@@ -22,7 +22,8 @@ func TestDecode(t *testing.T) {
 		{"\x1b", []event{{key: keyCancel}}},
 		{"\x1b[A\x1bOB", []event{{key: keyUp}, {key: keyDown}}},
 		{"\x1b[1;5C", []event{{key: keyExpand}}},
-		{"\x1b[Z", []event{{key: keyCollapse}}},
+		{"\x1b[Z", []event{{key: keyBackTab}}},
+		{"\t", []event{{key: keyTab}}},
 		{"\x1b[5~\x1b[6~", []event{{key: keyPageUp}, {key: keyPageDown}}},
 		{"\x1b[1~\x1b[4~\x1b[H\x1b[F", []event{{key: keyHome}, {key: keyEnd}, {key: keyHome}, {key: keyEnd}}},
 		{"\x1b[2~x", []event{{key: keyRune, r: 'x'}}}, // Insert is ignored

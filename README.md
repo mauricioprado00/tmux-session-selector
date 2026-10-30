@@ -184,7 +184,8 @@ An initial query gives a pre-filtered view, for example
 `Ctrl-O` shows every window of the selected session at once, live, for
 watching them. From a session row they share the screen evenly; from a window
 row that window takes the middle half and the others surround it. Arrows (or
-`hjkl`) move the focus, `o` puts the window in focus in the centre (again on
+`hjkl`) move the focus, wrapping at the edges; `Tab` steps through the windows
+in order and typing a window's number focuses it; `o` puts the window in focus in the centre (again on
 the centred one to share the screen evenly), `Enter` switches to the window
 in focus, `Esc` or `q` goes back to the list.
 

@@ -32,6 +32,8 @@ const (
 	keyToggleMode
 	keyHalfDown
 	keyMatrix
+	keyTab
+	keyBackTab
 )
 
 type event struct {
@@ -54,7 +56,7 @@ var ctrlKeys = map[byte]key{
 	0x0b: keyUp,         // Ctrl-K
 	0x0e: keyDown,       // Ctrl-N
 	'\n': keyDown,       // Ctrl-J
-	'\t': keyExpand,
+	'\t': keyTab,
 	0x12: keyToggleRegex,   // Ctrl-R
 	0x16: keyTogglePreview, // Ctrl-V
 	0x14: keyTagAll,        // Ctrl-T
@@ -75,8 +77,8 @@ var csiKeys = map[byte]key{
 	'D': keyCollapse,
 	'H': keyHome,
 	'F': keyEnd,
-	'Z': keyCollapse, // Shift-Tab
-	'P': keyHelp,     // F1
+	'Z': keyBackTab, // Shift-Tab
+	'P': keyHelp,    // F1
 }
 
 // tildeKeys maps the first parameter of an ESC [ n ~ sequence.

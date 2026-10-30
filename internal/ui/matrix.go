@@ -27,7 +27,13 @@ type matrixView struct {
 	center  *tmux.Window // nil for an even grid
 	focus   int          // index into session.Windows
 	cells   []cellBox    // where each window was drawn, by index into session.Windows
+	// The window number being typed, and when its last digit came.
+	number   string
+	numberAt time.Time
 }
+
+// numberGap is the longest pause between the digits of one window number.
+const numberGap = time.Second
 
 // cellBox is a box on screen, corners inclusive.
 type cellBox struct {
@@ -67,11 +73,22 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 		mv.focus = mv.nearest(d[0], d[1])
 		return false, nil, nil
 	}
+	n := len(mv.session.Windows)
 	switch ev.key {
+	case keyTab:
+		mv.focus = (mv.focus + 1) % n
+	case keyBackTab:
+		mv.focus = (mv.focus + n - 1) % n
+	case keyHome:
+		mv.focus = 0
+	case keyEnd:
+		mv.focus = n - 1
 	case keyRune:
 		switch d, ok := letters[ev.r]; {
 		case ok:
 			mv.focus = mv.nearest(d[0], d[1])
+		case ev.r >= '0' && ev.r <= '9':
+			mv.typeDigit(ev.r)
 		case ev.r == 'o':
 			mv.toggleCenter()
 		case ev.r == 'q':
@@ -87,6 +104,30 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 		return m.matrixMouse(ev)
 	}
 	return false, nil, nil
+}
+
+// typeDigit adds a digit to the window number being typed and focuses the
+// window with that index, if there is one. Digits more than numberGap apart
+// start a new number.
+func (mv *matrixView) typeDigit(r rune) {
+	if time.Since(mv.numberAt) > numberGap {
+		mv.number = ""
+	}
+	mv.number += string(r)
+	mv.numberAt = time.Now()
+	for i, w := range mv.session.Windows {
+		if fmt.Sprint(w.Index) == mv.number {
+			mv.focus = i
+			return
+		}
+	}
+	// No such window: start again from this digit.
+	mv.number = string(r)
+	for i, w := range mv.session.Windows {
+		if fmt.Sprint(w.Index) == mv.number {
+			mv.focus = i
+		}
+	}
 }
 
 // toggleCenter puts the window in focus in the centre, or, if it is there
@@ -140,31 +181,79 @@ func (m *model) matrixMouse(ev event) (done bool, target *tmux.Target, err error
 	return false, nil, nil
 }
 
-// nearest is the window whose box is nearest the focused one in direction
-// (dx, dy), or the focused one if there is none that way. Rows count double,
-// as terminal cells are about twice as tall as wide.
+// nearest is the window to move the focus to in direction (dx, dy): of the
+// boxes beyond the focused one that way, those beside it (overlapping it
+// across the direction) come first, then the closest, then the best aligned.
+// It is the focused one if there is none that way. Comparing boxes rather
+// than centre points keeps the large centre window reachable from every
+// window around it.
 func (mv *matrixView) nearest(dx, dy int) int {
 	if mv.focus >= len(mv.cells) {
 		return mv.focus
 	}
-	center := func(b cellBox) (int, int) { return b.x0 + b.x1, 2 * (b.y0 + b.y1) }
-	fx, fy := center(mv.cells[mv.focus])
-	best, bestScore := mv.focus, math.MaxInt
+	f := mv.cells[mv.focus]
+	best := mv.focus
+	var bestRank [3]int
 	for i, b := range mv.cells {
 		if i == mv.focus {
 			continue
 		}
-		cx, cy := center(b)
-		along := (cx-fx)*dx + (cy-fy)*dy
-		across := abs((cx-fx)*dy) + abs((cy-fy)*dx)
-		if along <= 0 {
-			continue
+		var gap, overlap, offset int
+		switch {
+		case dx > 0:
+			gap, overlap, offset = b.x0-f.x1, min(b.y1, f.y1)-max(b.y0, f.y0), abs(b.y0+b.y1-f.y0-f.y1)
+		case dx < 0:
+			gap, overlap, offset = f.x0-b.x1, min(b.y1, f.y1)-max(b.y0, f.y0), abs(b.y0+b.y1-f.y0-f.y1)
+		case dy > 0:
+			gap, overlap, offset = b.y0-f.y1, min(b.x1, f.x1)-max(b.x0, f.x0), abs(b.x0+b.x1-f.x0-f.x1)
+		default:
+			gap, overlap, offset = f.y0-b.y1, min(b.x1, f.x1)-max(b.x0, f.x0), abs(b.x0+b.x1-f.x0-f.x1)
 		}
-		if score := along + 2*across; score < bestScore {
-			best, bestScore = i, score
+		if gap <= 0 {
+			continue // not beyond the focused box that way
+		}
+		beside := 0
+		if overlap < 0 {
+			beside = 1
+		}
+		if rank := [3]int{beside, gap, offset}; best == mv.focus || less3(rank, bestRank) {
+			best, bestRank = i, rank
+		}
+	}
+	if best == mv.focus {
+		return mv.wrap(dx, dy)
+	}
+	return best
+}
+
+// wrap is the window to focus when nothing is beyond the focused one in
+// direction (dx, dy): the farthest one the other way that is beside it, as
+// if the screen wrapped around.
+func (mv *matrixView) wrap(dx, dy int) int {
+	f := mv.cells[mv.focus]
+	best, bestEdge := mv.focus, 0
+	for i, b := range mv.cells {
+		var overlap, edge int
+		switch {
+		case dx != 0:
+			overlap, edge = min(b.y1, f.y1)-max(b.y0, f.y0), -dx*b.x0
+		default:
+			overlap, edge = min(b.x1, f.x1)-max(b.x0, f.x0), -dy*b.y0
+		}
+		if i != mv.focus && overlap >= 0 && (best == mv.focus || edge > bestEdge) {
+			best, bestEdge = i, edge
 		}
 	}
 	return best
+}
+
+func less3(a, b [3]int) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
 }
 
 func abs(n int) int {
@@ -316,7 +405,7 @@ func (m *model) drawMatrix(b *strings.Builder, width, height int) {
 	}
 	c.draw(b, 1)
 	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ or hjkl focus  o centre / uncentre  Enter switch to it  double-click switch  Esc/q back"})
+		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre / uncentre  Enter switch  Esc/q back"})
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.
