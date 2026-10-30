@@ -313,6 +313,10 @@ than names, so names containing `:`, `.` or spaces cannot be misparsed.
 `switch-client` takes `-c <client>` when `--client` is given (see §9), so the
 correct client switches even when several are attached.
 
+When run **outside** tmux (`$TMUX` unset), the tool uses
+`attach-session -t <target>` instead, replacing its own process with tmux
+(`exec`).
+
 ### 8.1 Command template
 
 `--command` replaces the jump with any tmux command, as `choose-tree`'s
@@ -328,10 +332,6 @@ bind J display-popup -E "tmux-session-selector -command \"join-pane -h -s '%%'\"
 Every way of choosing (Enter, double-click, Alt-digit, a click in the
 preview) runs the command, inside or outside tmux. If it fails, its error is
 shown on the prompt line, the list is reloaded and the selector stays open.
-
-When run **outside** tmux (`$TMUX` unset), the tool uses
-`attach-session -t <target>` instead, replacing its own process with tmux
-(`exec`).
 
 ## 9. Launching
 
