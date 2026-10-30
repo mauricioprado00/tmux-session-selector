@@ -26,7 +26,16 @@ curl -L https://github.com/mauricioprado00/tmux-session-selector/releases/latest
 Archives exist for `linux_amd64`, `linux_arm64`, `darwin_amd64` and
 `darwin_arm64`; `checksums.txt` holds their SHA-256 sums.
 
-Or build from source with Go 1.22 or newer:
+Or build and install from a clone with Go 1.22 or newer:
+
+```sh
+make install        # into ~/.local/bin
+sudo make install   # into /usr/local/bin, for every user
+```
+
+`make uninstall` removes it; `BINDIR=…` and `GO=…` override the defaults.
+
+Or with `go install`:
 
 ```sh
 go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session-selector@latest
