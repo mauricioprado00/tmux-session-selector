@@ -32,6 +32,9 @@ type matrixView struct {
 	// row) it was entered by. Outside the focused window it is reset to the
 	// window's middle.
 	px, py int
+	// changed is set when windows opened or closed while the view was open,
+	// so the list is read again on the way back to it.
+	changed bool
 	// The window number being typed, and when its last digit came.
 	number   string
 	numberAt time.Time
@@ -97,12 +100,12 @@ func (m *model) matrixKey(ev event) (done bool, target *tmux.Target, err error) 
 		case ev.r == 'o':
 			mv.toggleCenter()
 		case ev.r == 'q':
-			m.matrix = nil
+			m.closeMatrix()
 		}
 	case keyMatrix:
 		mv.toggleCenter()
 	case keyCancel:
-		m.matrix = nil
+		m.closeMatrix()
 	case keyEnter:
 		return m.matrixJump()
 	case keyMouse:
@@ -131,6 +134,68 @@ func (mv *matrixView) typeDigit(r rune) {
 	for i, w := range mv.session.Windows {
 		if fmt.Sprint(w.Index) == mv.number {
 			mv.focus = i
+		}
+	}
+}
+
+// closeMatrix goes back to the list, reading it again if windows opened or
+// closed meanwhile.
+func (m *model) closeMatrix() {
+	changed := m.matrix.changed
+	m.matrix = nil
+	if changed {
+		m.reload()
+	}
+}
+
+// refreshMatrix reads the session again, so that windows opened or closed
+// since the last look appear or go. The focus and the centre stay on the same
+// windows; if the centre window closed, the windows share the screen evenly,
+// and if the whole session went, the view closes with a note.
+func (m *model) refreshMatrix() {
+	mv := m.matrix
+	sessions, err := m.tmux.Sessions()
+	if err != nil {
+		return
+	}
+	sessions, _ = withoutPane(sessions, m.self, tmux.Location{})
+	var s *tmux.Session
+	for _, x := range sessions {
+		if x.ID == mv.session.ID {
+			s = x
+		}
+	}
+	if s == nil || len(s.Windows) == 0 {
+		mv.changed = true
+		m.closeMatrix()
+		m.status = "the session has gone"
+		return
+	}
+	ids := func(ws []*tmux.Window) string {
+		var b strings.Builder
+		for _, w := range ws {
+			b.WriteString(w.ID)
+		}
+		return b.String()
+	}
+	if ids(s.Windows) != ids(mv.session.Windows) {
+		mv.changed = true
+	}
+	var focusID, centerID string
+	if mv.focus < len(mv.session.Windows) {
+		focusID = mv.session.Windows[mv.focus].ID
+	}
+	if mv.center != nil {
+		centerID = mv.center.ID
+	}
+	mv.session, mv.center = s, nil
+	mv.focus = min(mv.focus, len(s.Windows)-1)
+	for i, w := range s.Windows {
+		if w.ID == focusID {
+			mv.focus = i
+		}
+		if w.ID == centerID {
+			mv.center = w
 		}
 	}
 }

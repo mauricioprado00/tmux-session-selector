@@ -205,6 +205,9 @@ func Run(o Options) (*tmux.Target, error) {
 			if m.matrix == nil && (!m.preview || m.help) {
 				continue
 			}
+			if m.matrix != nil {
+				m.refreshMatrix()
+			}
 			m.screens = map[string]screen{}
 		case <-quit:
 			return nil, nil

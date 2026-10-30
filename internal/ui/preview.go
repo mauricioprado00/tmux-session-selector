@@ -397,11 +397,25 @@ func (m *model) loadScreens(panes []*tmux.Pane) {
 		return
 	}
 	out, err := m.tmux.Capture(ids...)
+	if err != nil && len(ids) > 1 {
+		// A pane may have closed since the tree was read, which fails the
+		// whole batch: capture the panes one by one, so only that one is lost.
+		out = map[string]tmux.Screen{}
+		for _, id := range ids {
+			if one, err := m.tmux.Capture(id); err != nil {
+				m.screens[id] = screen{err: err}
+			} else {
+				out[id] = one[id]
+			}
+		}
+		err = nil
+	}
 	for _, id := range ids {
-		if err != nil {
+		switch sc, ok := out[id]; {
+		case err != nil:
 			m.screens[id] = screen{err: err}
-		} else {
-			m.screens[id] = screen{cells: parseScreen(out[id].Text)}
+		case ok:
+			m.screens[id] = screen{cells: parseScreen(sc.Text)}
 		}
 	}
 	// Keep the cursor current, so a live preview scrolls with the pane.

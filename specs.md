@@ -341,6 +341,16 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 | `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |
 | `Esc`, `q` | back to the list |
 
+On every refresh tick the session is read again, so windows opened or
+closed meanwhile appear or go and the layout adjusts; the focus and the
+centre stay on the same windows by id. If the centre window closes, the
+windows share the screen evenly; if the whole session goes, the view closes
+with a note. Returning to the list reads it again if windows changed.
+
+All panes are captured in one tmux call; if that fails, because a pane closed
+since it was listed, they are captured one by one, so the others keep their
+content (this applies to the preview too).
+
 If switching fails, the matrix closes and the error shows on the list.
 
 ## 7. Filtering
