@@ -134,6 +134,25 @@ chat() {
   done
 }
 
+# procs looks like top, with made-up processes, so nothing real is shown.
+procs() {
+  local cmds=(nginx postgres node redis-server python3 java sidekiq envoy) users=(app postgres redis www-data root)
+  local up=$((RANDOM % 90 + 3)) i
+  while true; do
+    clear
+    printf 'top - %s up %d days,  load average: %d.%02d, %d.%02d, %d.%02d\n' "$(date +%T)" "$up" \
+      $((RANDOM % 4)) $((RANDOM % 100)) $((RANDOM % 3)) $((RANDOM % 100)) $((RANDOM % 2)) $((RANDOM % 100))
+    printf 'Tasks: %d total, %d running   %%Cpu(s): %d.%d us, %d.%d sy\n\n' $((RANDOM % 80 + 180)) $((RANDOM % 5 + 1)) \
+      $((RANDOM % 40)) $((RANDOM % 10)) $((RANDOM % 10)) $((RANDOM % 10))
+    printf '%s  %-7s %-9s %6s %6s  %s%s\n' "$D" PID USER %CPU %MEM COMMAND "$N"
+    for i in 1 2 3 4 5 6 7 8; do
+      printf '  %-7d %-9s %4d.%d %4d.%d  %s\n' $((RANDOM % 30000 + 1000)) "$(pick "${users[@]}")" \
+        $((RANDOM % 60)) $((RANDOM % 10)) $((RANDOM % 15)) $((RANDOM % 10)) "$(pick "${cmds[@]}")"
+    done
+    sleep 2
+  done
+}
+
 db_queries() {
   local tables=(users orders order_items carts sessions products events)
   while true; do
@@ -237,7 +256,7 @@ create() {
   tmux new-window -t "$SESSION" -n deploy "$SELF deploy"
   tmux split-window -t "$SESSION:deploy" -v -l 30% "$SELF chat"
   tmux new-window -t "$SESSION" -n shell
-  tmux new-window -t "$SESSION" -n top top
+  tmux new-window -t "$SESSION" -n top "$SELF procs"
   tmux new-window -t "$SESSION" -n db "$SELF db_queries"
   tmux new-window -t "$SESSION" -n ping "$SELF pings"
   tmux new-window -t "$SESSION" -n git "$SELF git_log"
@@ -251,7 +270,7 @@ create() {
 case ${1:-create} in
   create) create ;;
   kill) tmux kill-session -t "$SESSION" ;;
-  api_log | worker_log | build | tests | metrics | deploy | chat | idle | \
+  api_log | worker_log | build | tests | metrics | deploy | chat | idle | procs | \
     db_queries | pings | git_log | pods | ticker | cron_log) "$1" ;;
   *) echo "usage: $0 [create|kill]" >&2; exit 1 ;;
 esac
