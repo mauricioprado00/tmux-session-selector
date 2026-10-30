@@ -56,8 +56,8 @@ backslash as `\\`, so the parser decodes those escapes while splitting. A raw
 
 | Level | Fields |
 |---|---|
-| Session | `session_id`, `session_name`, `session_attached` |
-| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag`, `window_raw_flags` |
+| Session | `session_id`, `session_name`, `session_attached`, `session_activity` |
+| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag`, `window_raw_flags`, `window_activity` |
 | Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y`, `pane_marked` |
 
 The geometry and cursor fields are only used to draw the preview (§6.4).
@@ -68,9 +68,19 @@ when `--client` names one. It is used to mark and pre-select the current row.
 
 A window linked into several sessions appears under each of them.
 
-Rows are grouped into a tree: session → window → pane. Sessions keep tmux's
-order (by name); windows are ordered by index, panes by index. Windows with a
-single pane do not show a pane row; the window row stands for that pane.
+Rows are grouped into a tree: session → window → pane. Windows with a single
+pane do not show a pane row; the window row stands for that pane.
+
+The tree is sorted as tmux's chooser sorts it (`-O` / `-r` there):
+
+| Order | Sessions | Windows |
+|---|---|---|
+| `index` (default) | by id, i.e. creation order | by index |
+| `name` | by name | by name |
+| `time` | most recent `session_activity` first | most recent `window_activity` first |
+
+Panes are always in index order. Reversing applies to every level. The prompt
+line shows the order, e.g. `(sort: time, reversed)`, as tmux's does.
 
 ## 6. User interface
 
@@ -214,6 +224,8 @@ Alt-O.
 | Key | tmux | Action |
 |---|---|---|
 | `Alt-x` | `x` | Kill the selected session, window or pane, after a `y/n` question on the prompt line (`kill-session`, `kill-window` or `kill-pane`). The tree is reloaded and the selection stays at the same position. |
+| `Alt-o` (or `Alt-O`) | `O` | Change the sort order: index → name → time (§5). |
+| `Alt-r` | `r` | Reverse the sort order. |
 
 While a question is shown, `y` or `Y` confirms and any other key cancels.
 
@@ -338,6 +350,8 @@ tmux-session-selector [flags] [initial query]
   --no-preview    start with the preview hidden
   --refresh DUR   how often the preview updates (default 250ms; 0 for a
                   single snapshot)
+  --sort ORDER    index (default), name or time; see §5
+  --reverse       reverse the sort order
   --version       print the version and exit
   --help          print usage and exit
 ```

@@ -29,6 +29,9 @@ type Options struct {
 	// Refresh is how often the preview is captured again; 0 keeps the
 	// first capture of each pane for the whole run.
 	Refresh time.Duration
+	// Sort is one of SortOrders; empty means "index".
+	Sort    string
+	Reverse bool
 }
 
 type model struct {
@@ -50,6 +53,8 @@ type model struct {
 	treeH    int
 	preview  bool
 	help     bool
+	order    int // index into SortOrders
+	reverse  bool
 	screens  map[string]screen
 	height   int   // screen height at the last render
 	previewY int   // screen row where the preview starts
@@ -93,6 +98,12 @@ func Run(o Options) (*tmux.Target, error) {
 	if o.Regex {
 		m.mode = filter.Regex
 	}
+	for i, name := range SortOrders {
+		if name == o.Sort {
+			m.order = i
+		}
+	}
+	m.reverse = o.Reverse
 	if err := m.load(); err != nil {
 		return nil, err
 	}
@@ -167,6 +178,7 @@ func (m *model) load() error {
 		}
 	}
 	m.roots, m.total = buildTree(sessions, here, m.home)
+	sortTree(m.roots, m.order, m.reverse)
 	m.screens = map[string]screen{}
 	return nil
 }
@@ -369,6 +381,14 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 // command runs the tmux chooser command for key r, pressed with Alt.
 func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 	switch r {
+	case 'o', 'O':
+		m.order = (m.order + 1) % len(SortOrders)
+		sortTree(m.roots, m.order, m.reverse)
+		m.refresh()
+	case 'r':
+		m.reverse = !m.reverse
+		sortTree(m.roots, m.order, m.reverse)
+		m.refresh()
 	case 'x':
 		if n := m.selected(); n != nil {
 			t := n.target()
@@ -559,7 +579,11 @@ func (m *model) render(width, height int) string {
 
 func (m *model) drawPrompt(b *strings.Builder, width int) {
 	query := clean(string(m.query))
-	right := span{text: fmt.Sprintf("[%s]  %d/%d", m.matcher.Mode(), m.matches, m.total), style: styleDim}
+	order := SortOrders[m.order]
+	if m.reverse {
+		order += ", reversed"
+	}
+	right := span{text: fmt.Sprintf("(sort: %s)  [%s]  %d/%d", order, m.matcher.Mode(), m.matches, m.total), style: styleDim}
 	switch {
 	case m.status != "":
 		right = span{text: clean(m.status), style: styleError}
@@ -654,6 +678,7 @@ var helpText = []string{
 	"  Ctrl-V         show or hide the preview",
 	"  ? or F1        this help (? only when the query is empty)",
 	"  Alt-x          kill the selected session, window or pane (asks y/n)",
+	"  Alt-o / Alt-r  sort by index, name or time (recent first); reverse",
 	"  < >            scroll the windows of a session preview (empty query)",
 	"  Esc            close (this help, then the selector)",
 	"",

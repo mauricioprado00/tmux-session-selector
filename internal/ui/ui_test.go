@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -262,5 +263,47 @@ func TestMouse(t *testing.T) {
 	}
 	if click(5, 5); m.help || m.selected().pane == nil || m.selected().pane.ID != "%2" {
 		t.Error("a click while help is open should only close it")
+	}
+}
+
+func TestSort(t *testing.T) {
+	pane := &tmux.Pane{ID: "%1"}
+	session := func(id, name string, activity int64, windows ...*tmux.Window) *tmux.Session {
+		return &tmux.Session{ID: id, Name: name, Activity: activity, Windows: windows}
+	}
+	window := func(index int, name string, activity int64) *tmux.Window {
+		return &tmux.Window{ID: fmt.Sprint("@", index), Index: index, Name: name, Activity: activity, Panes: []*tmux.Pane{pane}}
+	}
+	// tmux lists sessions by name; ids give creation order.
+	sessions := []*tmux.Session{
+		session("$2", "alpha", 300),
+		session("$10", "mid", 200),
+		session("$1", "zeta", 100, window(0, "b", 5), window(1, "c", 9), window(2, "a", 1)),
+	}
+	roots, total := buildTree(sessions, tmux.Location{}, "")
+	m := &model{roots: roots, total: total}
+	m.setQuery()
+	order := func() string {
+		var s []string
+		for _, r := range m.rows {
+			s = append(s, r.n.name)
+		}
+		return strings.Join(s, " ")
+	}
+	tests := []struct {
+		key  rune
+		want string
+	}{
+		{'o', "alpha mid zeta a b c"}, // name
+		{'O', "alpha mid zeta c b a"}, // time, most recent first
+		{'r', "zeta a b c mid alpha"}, // time, reversed
+		{'o', "mid alpha zeta a c b"}, // index, reversed: $10 $2 $1
+		{'r', "zeta b c a alpha mid"}, // index: $1 $2 $10, windows by index
+	}
+	for _, tt := range tests {
+		m.handle(alt(tt.key))
+		if got := order(); got != tt.want {
+			t.Errorf("after Alt-%c (sort %s, reverse %v): %q, want %q", tt.key, SortOrders[m.order], m.reverse, got, tt.want)
+		}
 	}
 }

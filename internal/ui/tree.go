@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -104,6 +105,49 @@ func (n *node) describe() string {
 		return "window " + strconv.Itoa(n.window.Index) + ": " + n.name
 	}
 	return "pane " + n.pane.ID + " (" + n.command + ")"
+}
+
+// SortOrders are the orders the tree can be sorted in, as in tmux's chooser:
+// sessions by id (creation) and windows by index; by name; or by time, most
+// recently active first. Panes are always in index order.
+var SortOrders = []string{"index", "name", "time"}
+
+// sortTree sorts the tree in place by SortOrders[order], reversed if asked.
+func sortTree(roots []*node, order int, reverse bool) {
+	less := func(a, b *node) bool {
+		switch {
+		case a.kind == paneRow:
+			return a.pane.Index < b.pane.Index
+		case SortOrders[order] == "name":
+			return a.name < b.name
+		case SortOrders[order] == "time" && a.kind == sessionRow:
+			return a.session.Activity > b.session.Activity
+		case SortOrders[order] == "time":
+			return a.window.Activity > b.window.Activity
+		case a.kind == sessionRow:
+			return idNumber(a.session.ID) < idNumber(b.session.ID)
+		}
+		return a.window.Index < b.window.Index
+	}
+	var sortNodes func(nodes []*node)
+	sortNodes = func(nodes []*node) {
+		sort.SliceStable(nodes, func(i, j int) bool {
+			if reverse {
+				return less(nodes[j], nodes[i])
+			}
+			return less(nodes[i], nodes[j])
+		})
+		for _, n := range nodes {
+			sortNodes(n.children)
+		}
+	}
+	sortNodes(roots)
+}
+
+// idNumber is the number in a tmux id such as $12.
+func idNumber(id string) int {
+	n, _ := strconv.Atoi(strings.TrimLeft(id, "$@%"))
+	return n
 }
 
 // target is where Enter on this row goes.

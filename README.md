@@ -108,6 +108,8 @@ The commands of tmux's own chooser work on the same letters with **Alt**
 | Key | Action |
 |---|---|
 | `Alt-x` | kill the selected session, window or pane (asks y/n) |
+| `Alt-o` | sort by index (creation order), name, or time (most recent first) |
+| `Alt-r` | reverse the sort |
 
 Command-line flags:
 
@@ -118,6 +120,8 @@ tmux-session-selector [flags] [initial query]
   -regex         start in regex mode
   -no-preview    start with the preview hidden
   -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot)
+  -sort ORDER    index (default), name or time
+  -reverse       reverse the sort order
   -version       print the version and exit
 ```
 

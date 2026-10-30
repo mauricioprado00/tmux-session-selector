@@ -41,8 +41,9 @@ type Window struct {
 	Zoomed        bool
 	// Flags as tmux shows them after the name: * current, - last,
 	// # activity, ! bell, ~ silence, M marked pane, Z zoomed.
-	Flags string
-	Panes []*Pane
+	Flags    string
+	Activity int64 // Unix time of the last activity
+	Panes    []*Pane
 }
 
 // ActivePane returns the window's active pane, or its first one.
@@ -62,6 +63,7 @@ type Session struct {
 	ID       string // $1
 	Name     string
 	Attached bool
+	Activity int64 // Unix time of the last activity
 	Windows  []*Window
 }
 
@@ -117,7 +119,7 @@ var paneFields = []string{
 	"pane_current_command", "pane_current_path", "pane_title",
 	"pane_left", "pane_top", "pane_width", "pane_height", "cursor_x", "cursor_y",
 	"window_width", "window_height", "window_zoomed_flag",
-	"window_raw_flags", "pane_marked",
+	"window_raw_flags", "pane_marked", "session_activity", "window_activity",
 }
 
 var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
@@ -151,14 +153,15 @@ func ParsePanes(out string) ([]*Session, error) {
 		}
 		s := bySession[f[0]]
 		if s == nil {
-			s = &Session{ID: f[0], Name: f[1], Attached: f[2] != "0"}
+			s = &Session{ID: f[0], Name: f[1], Attached: f[2] != "0", Activity: int64(atoi(f[24]))}
 			bySession[f[0]] = s
 			sessions = append(sessions, s)
 		}
 		w := byWindow[f[0]+f[3]]
 		if w == nil {
 			w = &Window{ID: f[3], Index: atoi(f[4]), Name: f[5], Active: f[6] == "1",
-				Width: atoi(f[19]), Height: atoi(f[20]), Zoomed: f[21] == "1", Flags: f[22]}
+				Width: atoi(f[19]), Height: atoi(f[20]), Zoomed: f[21] == "1", Flags: f[22],
+				Activity: int64(atoi(f[25]))}
 			byWindow[f[0]+f[3]] = w
 			s.Windows = append(s.Windows, w)
 		}

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,6 +46,8 @@ func run() int {
 	client := flag.String("client", "", "tmux client to switch (default: the calling client)")
 	regex := flag.Bool("regex", false, "start in regex mode")
 	noPreview := flag.Bool("no-preview", false, "start with the preview hidden")
+	sortOrder := flag.String("sort", "index", "sort order: "+strings.Join(ui.SortOrders, ", "))
+	reverse := flag.Bool("reverse", false, "reverse the sort order")
 	refresh := flag.Duration("refresh", 250*time.Millisecond, "how often the preview updates; 0 for a single snapshot")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
@@ -52,6 +55,10 @@ func run() int {
 	if *showVersion {
 		fmt.Println("tmux-session-selector", version)
 		return 0
+	}
+	if !slices.Contains(ui.SortOrders, *sortOrder) {
+		fmt.Fprintf(os.Stderr, "tmux-session-selector: -sort must be one of %s\n", strings.Join(ui.SortOrders, ", "))
+		return 2
 	}
 	// A binding whose command tmux did not format-expand passes the format
 	// itself; fall back to the calling client.
@@ -69,6 +76,8 @@ func run() int {
 		Regex:     *regex,
 		NoPreview: *noPreview,
 		Refresh:   *refresh,
+		Sort:      *sortOrder,
+		Reverse:   *reverse,
 	})
 	if err == nil && target != nil {
 		err = tm.Attach(*target)
