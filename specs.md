@@ -57,8 +57,8 @@ backslash as `\\`, so the parser decodes those escapes while splitting. A raw
 | Level | Fields |
 |---|---|
 | Session | `session_id`, `session_name`, `session_attached` |
-| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag` |
-| Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y` |
+| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag`, `window_raw_flags` |
+| Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y`, `pane_marked` |
 
 The geometry and cursor fields are only used to draw the preview (§6.4).
 
@@ -96,10 +96,13 @@ single pane do not show a pane row; the window row stands for that pane.
   a dimmed hint, `type to filter · ? for help`.
 - **Tree**: one row per session, window and pane.
   - Session row: name, window count, `attached` when a client is attached.
-  - Window row: `index: name`; for single-pane windows also the command and
-    path.
-  - Pane row: pane id, current command, current path (with `$HOME` shown as
-    `~`).
+  - Window row: `index: name` followed by tmux's window flags
+    (`window_raw_flags`: `*` current, `-` last, `#` activity, `!` bell,
+    `~` silence, `M` marked pane, `Z` zoomed), with `!` in red and `#` / `~`
+    in yellow; then `(N panes)` for multi-pane windows, or the command and
+    path for single-pane ones.
+  - Pane row: pane id (followed by `M` when it is the marked pane), current
+    command, current path (with `$HOME` shown as `~`).
   - The client's current session, window and pane are marked (bold or `*`).
   - Rows shown only as context for a match (see §7.4) are dimmed; the matched
     text is highlighted.

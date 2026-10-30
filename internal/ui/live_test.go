@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
@@ -83,5 +84,39 @@ func TestKill(t *testing.T) {
 	m.handle(typed('Y'))
 	if len(m.rows) != 2 || m.rows[0].n.name != "a" {
 		t.Errorf("after killing session b, rows = %q", names(m.rows))
+	}
+}
+
+// rowText is the text of a row as drawn, without styles.
+func (m *model) rowText(n *node) string {
+	var b strings.Builder
+	for _, s := range m.rowSpans(n) {
+		b.WriteString(s.text)
+	}
+	return b.String()
+}
+
+func TestFlags(t *testing.T) {
+	tm := tmuxServer(t)
+	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "one", "-x", "80", "-y", "24")
+	pane := tmuxRun(t, tm, "split-window", "-P", "-F", "#{pane_id}", "-t", "a:one")
+	tmuxRun(t, tm, "resize-pane", "-Z", "-t", pane)
+	tmuxRun(t, tm, "select-pane", "-m", "-t", pane)
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "two", "printf '\\a'; sleep 30")
+	time.Sleep(300 * time.Millisecond)
+	m := liveModel(t, tm)
+
+	one, two := m.rows[1].n, m.rows[2].n
+	if got := m.rowText(one); !strings.Contains(got, "one*MZ") || !strings.Contains(got, "(2 panes)") {
+		t.Errorf("window one = %q", got)
+	}
+	if got := m.rowText(two); !strings.Contains(got, "two!") {
+		t.Errorf("window two = %q", got)
+	}
+	one.expanded = true
+	m.refresh()
+	m.selectRow(t, pane)
+	if got := m.rowText(m.selected()); !strings.Contains(got, pane+"M") {
+		t.Errorf("marked pane row = %q", got)
 	}
 }

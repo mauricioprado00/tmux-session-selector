@@ -8,13 +8,15 @@ import (
 
 // SGR parameters used for styling.
 const (
-	styleDim     = "2"
-	styleSelect  = "7"
-	styleMatch   = "1;33"
-	stylePath    = "36"
-	styleError   = "31"
-	styleCurrent = "1"
-	styleConfirm = "1;31"
+	styleDim      = "2"
+	styleSelect   = "7"
+	styleMatch    = "1;33"
+	stylePath     = "36"
+	styleError    = "31"
+	styleCurrent  = "1"
+	styleConfirm  = "1;31"
+	styleBell     = "1;31"
+	styleActivity = "1;33"
 )
 
 // span is a piece of a screen line. hl holds byte ranges of text to show as

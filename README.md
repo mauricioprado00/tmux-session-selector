@@ -86,6 +86,9 @@ tmux's: click the `<` / `>` arrows or use the wheel over it.
 Matching ignores case unless the query has an uppercase letter. A row shown
 dimmed does not match itself; it is there because something inside it does.
 
+Windows show tmux's flags after their name: `*` current, `-` last, `#`
+activity, `!` bell (in red), `~` silence, `M` marked pane, `Z` zoomed.
+
 | Key | Action |
 |---|---|
 | `Up` / `Down`, `Ctrl-P` / `Ctrl-N`, `Ctrl-K` / `Ctrl-J` | move |

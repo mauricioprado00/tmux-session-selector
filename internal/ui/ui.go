@@ -471,6 +471,22 @@ func (m *model) mouse(ev event) (done bool, target *tmux.Target, err error) {
 	return false, nil, nil
 }
 
+// flagSpans styles tmux window flags, making bell and activity stand out.
+func flagSpans(flags string) []span {
+	var s []span
+	for _, r := range clean(flags) {
+		style := styleDim
+		switch r {
+		case '!':
+			style = styleBell
+		case '#', '~':
+			style = styleActivity
+		}
+		s = append(s, span{text: string(r), style: style})
+	}
+	return s
+}
+
 // arrowColumn is the screen column of a row's expand arrow (see rowSpans).
 func arrowColumn(n *node) int {
 	if n.kind == sessionRow {
@@ -591,14 +607,23 @@ func (m *model) rowSpans(n *node) []span {
 		idx := fmt.Sprint(n.window.Index)
 		s := []span{marker, {text: "  " + arrow}, {text: idx, hl: hl(filter.Index, idx)}, {text: ": "},
 			{text: n.name, hl: hl(filter.Window, n.name)}}
-		if n.pane != nil {
+		s = append(s, flagSpans(n.window.Flags)...)
+		if n.pane == nil {
+			s = append(s, span{text: fmt.Sprintf("  (%d panes)", len(n.window.Panes)), style: styleDim})
+		} else {
 			s = append(s, span{text: "  "}, span{text: n.command, hl: hl(filter.Command, n.command)},
 				span{text: "  "}, span{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)})
 		}
 		return s
 	default:
 		pad := strings.Repeat(" ", n.cmdWidth-textWidth(n.command))
-		return []span{marker, {text: "      " + n.pane.ID + "  "},
+		id := n.pane.ID
+		if n.pane.Marked {
+			id += "M"
+		} else {
+			id += " "
+		}
+		return []span{marker, {text: "      " + id + " "},
 			{text: n.command, hl: hl(filter.Command, n.command)}, {text: pad + "  "},
 			{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)}}
 	}
