@@ -209,8 +209,17 @@ turns it off on exit. It behaves like tmux's chooser:
 | click a pane box in a window preview, or a window box in a session preview | jump to that pane or window |
 | click a `<` / `>` arrow of a session preview | scroll its windows by one |
 | click the footer | open the help panel |
+| right-click a row | select it and open a menu of commands (below) |
 
-Modifier keys are ignored; other buttons do nothing. In a popup or pane,
+Modifier keys are ignored; the middle button does nothing.
+
+The right-click menu has the items of tmux's chooser menu: Select,
+Expand (or Collapse), Mark, Tag (or Untag), Tag All, Tag None, Kill,
+Kill Tagged, Cancel. Each shows the key that does the same without the menu.
+It opens at the pointer, moved to fit on screen, and is drawn over the list
+and preview. While it is open: a click on an item, `Up`/`Down` and `Enter`,
+or tmux's letter for the item (`t`, `T`, `a`, `m`, `x`, `X`, `q`, `l`/`h`)
+picks it; any other key or click closes it without acting or typing. In a popup or pane,
 tmux forwards mouse events only when its `mouse` option is on (checked with
 tmux 3.4, in both a window and a `display-popup`).
 

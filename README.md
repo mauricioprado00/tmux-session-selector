@@ -70,7 +70,8 @@ while you choose.
 
 With tmux's `mouse` option on, the mouse works too: click selects, double-click
 jumps, the wheel moves, and clicking a pane or window in the preview jumps
-there. When a session has more windows than fit, its preview scrolls like
+there; right-click opens a menu of commands, as in tmux. When a session has
+more windows than fit, its preview scrolls like
 tmux's: click the `<` / `>` arrows or use the wheel over it.
 
 | Query | Shows |

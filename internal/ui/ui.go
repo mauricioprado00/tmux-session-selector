@@ -74,6 +74,8 @@ type model struct {
 	confirm *confirmation
 	// A line of input being typed on the prompt line instead of the query.
 	input *inputPrompt
+	// The right-click menu, while open.
+	menu *menu
 	// Tagged rows, by target, so tags survive reloading the tree.
 	tags map[string]tmux.Target
 	// The last left click, to detect a double click.
@@ -286,6 +288,9 @@ func (m *model) move(d int) {
 func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if ev.key != keyMouse || ev.press {
 		m.status = ""
+	}
+	if m.menu != nil {
+		return m.menuKey(ev)
 	}
 	if c := m.confirm; c != nil {
 		if ev.key == keyMouse && !ev.press {
@@ -669,6 +674,11 @@ func (m *model) mouse(ev event) (done bool, target *tmux.Target, err error) {
 		} else {
 			m.move(d)
 		}
+	case button == 2 && ev.y >= 2 && ev.y < 2+m.treeH:
+		if idx := m.top + ev.y - 2; idx < len(m.rows) {
+			m.sel = idx
+			m.openMenu(ev.x, ev.y)
+		}
 	case button != 0:
 	case ev.y >= 2 && ev.y < 2+m.treeH:
 		idx := m.top + ev.y - 2
@@ -792,6 +802,9 @@ func (m *model) render(width, height int) string {
 		m.drawPreview(&b, 2+m.treeH, width, previewH)
 	}
 	drawLine(&b, height-1, width, styleDim, false, span{text: footer})
+	if m.menu != nil {
+		m.menu.draw(&b, width, height)
+	}
 	cursor := m.drawPromptCursor(width)
 	fmt.Fprintf(&b, "\x1b[1;%dH\x1b[?25h", cursor)
 	return b.String()
@@ -937,7 +950,8 @@ var helpText = []string{
 	"  Mouse: click selects, double-click jumps, the wheel moves (over a",
 	"  session preview it scrolls the windows), a click on an arrow expands,",
 	"  collapses or scrolls, a click in the preview jumps to the pane or",
-	"  window under it, and a click on the bottom line opens this help.",
+	"  window under it, a right-click opens a menu of commands, and a click",
+	"  on the bottom line opens this help.",
 	"",
 	"  Press any key to close this help.",
 }

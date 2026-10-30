@@ -367,3 +367,51 @@ func TestShortcuts(t *testing.T) {
 		t.Errorf("Alt-2 after filtering should jump to the first match, got %+v", target)
 	}
 }
+
+func TestMenu(t *testing.T) {
+	m := &model{roots: testTree(), total: 7}
+	m.setQuery()
+	m.render(80, 24)
+	rightClick := func(x, y int) {
+		m.handle(event{key: keyMouse, button: 2, x: x, y: y, press: true})
+		m.handle(event{key: keyMouse, button: 2, x: x, y: y})
+	}
+	rightClick(10, 3) // editor
+	if m.menu == nil || m.selected().name != "editor" {
+		t.Fatalf("right-click should select editor and open the menu")
+	}
+	labels := ""
+	for _, it := range m.menu.items {
+		labels += it.label + "|"
+	}
+	if labels != "Select|Expand|Mark||Tag|Tag All|Tag None||Kill|Kill Tagged||Cancel|" {
+		t.Errorf("items = %s", labels)
+	}
+	m.handle(event{key: keyDown})
+	m.handle(event{key: keyEnter}) // Expand
+	if m.menu != nil || len(m.rows) != 7 {
+		t.Errorf("Expand from the menu: menu %v, rows %q", m.menu, names(m.rows))
+	}
+
+	rightClick(10, 3)
+	m.handle(typed('t')) // tmux's letter for Tag
+	if m.menu != nil || len(m.tags) != 1 {
+		t.Errorf("t in the menu should tag, tags %v", m.tags)
+	}
+
+	rightClick(10, 2)
+	var b strings.Builder
+	m.menu.draw(&b, 80, 24)
+	// Click the "Kill" item: the menu's first item row is one below its top.
+	m.handle(event{key: keyMouse, x: m.menu.x + 2, y: m.menu.y + 1 + 8, press: true})
+	if m.confirm == nil || !strings.Contains(m.confirm.question, "session api") {
+		t.Errorf("clicking Kill should ask to kill api, got %+v", m.confirm)
+	}
+	m.handle(typed('n'))
+
+	rightClick(10, 2)
+	m.handle(typed('z'))
+	if m.menu != nil || len(m.query) != 0 {
+		t.Error("another key should close the menu without typing")
+	}
+}
