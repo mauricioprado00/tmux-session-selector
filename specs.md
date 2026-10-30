@@ -69,7 +69,7 @@ when `--client` names one. It is used to mark and pre-select the current row.
 A window linked into several sessions appears under each of them.
 
 When the selector runs in a pane of its own, rather than in a popup, that pane
-is left out of everything it shows (list, preview, matrix, counts), so it
+is left out of everything it shows (list, preview, overview, counts), so it
 never previews itself. The pane is found by matching the selector's terminal
 (`tty`) against `pane_tty`; in a popup none matches. Its window goes too if
 nothing else is in it, as with the temporary window of an `--open window`
@@ -77,7 +77,7 @@ binding, and its session if that is left empty. If that window was the
 client's current one, the window tmux flags as last (`-`), the one the client
 came from, stands in for it: it is marked current (`*`), selected at start,
 the target of `Alt-h`, and its session's active window in previews and the
-matrix.
+overview.
 
 Sessions in a session group share their windows, so, like tmux's chooser,
 only one session of each group is shown unless `--all-groups` (tmux's `-G`)
@@ -207,7 +207,7 @@ Modelled on tmux's own `choose-tree` preview:
 | `Ctrl-R` | toggle between `words` and `regex` mode |
 | `Ctrl-V` | toggle the preview |
 | `Ctrl-/` | switch between search and normal mode (§6.8) |
-| `Ctrl-O` | open the matrix view of the selected row's session (§6.9) |
+| `Ctrl-O` | open the overview of the selected row's session (§6.9) |
 | `Ctrl-B` / `Ctrl-F`, `Ctrl-D` | page up / down, half a page down |
 | `?` (empty query) / `F1` | open the help panel |
 | `<` / `>` (empty query) | scroll the windows of a session preview |
@@ -239,7 +239,7 @@ Modifier keys are ignored; the middle button does nothing.
 
 The right-click menu has the items of tmux's chooser menu: Select,
 Expand (or Collapse), Mark, Tag (or Untag), Tag All, Tag None, Kill,
-Kill Tagged, Cancel, plus Matrix View (§6.9, letter `z`). Each shows the key that does the same without the menu.
+Kill Tagged, Cancel, plus Overview (§6.9, letter `o`). Each shows the key that does the same without the menu.
 It opens at the pointer, moved to fit on screen, and is drawn over the list
 and preview. While it is open: a click on an item, `Up`/`Down` and `Enter`,
 or tmux's letter for the item (`t`, `T`, `a`, `m`, `x`, `X`, `q`, `l`/`h`)
@@ -310,9 +310,9 @@ page, Alt-+ / Alt--), except that in normal mode `Ctrl-U` is half a page up
 instead of clearing the query, and `Backspace` / `Ctrl-W` do nothing. The
 right-click menu shows the key of the current mode for each item.
 
-### 6.9 Matrix view
+### 6.9 Overview
 
-`Ctrl-O` (both modes, or Matrix View in the right-click menu) replaces the
+`Ctrl-O` (both modes, or Overview in the right-click menu) replaces the
 list with every window of the selected row's session at once, for watching
 them. Each window is drawn as in the preview (§6.4): its panes in their
 layout, in colour, and live, captured again every `--refresh`.
@@ -351,7 +351,7 @@ All panes are captured in one tmux call; if that fails, because a pane closed
 since it was listed, they are captured one by one, so the others keep their
 content (this applies to the preview too).
 
-If switching fails, the matrix closes and the error shows on the list.
+If switching fails, the overview closes and the error shows on the list.
 
 ## 7. Filtering
 
@@ -489,12 +489,11 @@ The temporary window closes itself when the program exits.
   to the selector, given by the binary's absolute path (`os.Executable`), so
   tmux's `PATH` does not matter; `ARGS` are added to the bound command.
   `--open` says where it opens:
-  - `popup` (the default): `display-popup -E -w 80% -h 80%`, over the current
-    window.
-  - `full`: `display-popup -E -B -w 100% -h 100%`, a borderless popup covering
-    the whole terminal, status line included. It looks like a window of its
-    own, but none is created, so nothing appears in the window list and the
-    selector never previews itself.
+  - `full` (the default): `display-popup -E -B -w 100% -h 100%`, a borderless
+    popup covering the whole terminal, status line included. It looks like a
+    window of its own, but none is created, so nothing appears in the window
+    list and the selector never previews itself.
+  - `popup`: `display-popup -E -w 80% -h 80%`, over the current window.
   - `window`: `new-window -n select`, a real window, closed when the selector
     exits; for tmux before 3.2. The selector leaves this window out of what it
     shows (§5).
@@ -541,7 +540,7 @@ tmux-session-selector [flags] [initial query]
   --tmux-bind     bind the selector in tmux and exit; see §9.3
   --tmux-unbind   remove that binding and exit
   --key KEY       the key for --tmux-bind, after the prefix (default w)
-  --open MODE     for --tmux-bind: popup (default), full or window
+  --open MODE     for --tmux-bind: full (default), popup or window
   --config PATH   the tmux configuration file for --tmux-bind / --tmux-unbind
   --zoom          zoom the pane the selector runs in while it runs (tmux's
                   -Z); see below

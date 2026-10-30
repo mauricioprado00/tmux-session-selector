@@ -281,7 +281,7 @@ func TestSquashGroupsKeepsCurrent(t *testing.T) {
 	}
 }
 
-func TestMatrixFollowsWindows(t *testing.T) {
+func TestOverviewFollowsWindows(t *testing.T) {
 	tm := tmuxServer(t)
 	tmuxRun(t, tm, "new-session", "-d", "-s", "a", "-n", "w0", "-x", "80", "-y", "24", "echo zero; sleep 30")
 	w1 := tmuxRun(t, tm, "new-window", "-d", "-P", "-F", "#{window_id}", "-t", "a", "-n", "w1", "echo one; sleep 30")
@@ -289,52 +289,52 @@ func TestMatrixFollowsWindows(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	m := liveModel(t, tm)
 	m.selectRow(t, "w1")
-	m.handle(event{key: keyMatrix}) // centred on w1
+	m.handle(event{key: keyOverview}) // centred on w1
 	m.render(120, 40)
 
-	// A window closes behind the matrix's back: the others keep their content.
+	// A window closes behind the overview's back: the others keep their content.
 	tmuxRun(t, tm, "kill-window", "-t", "a:w2")
 	m.screens = map[string]screen{}
 	m.render(120, 40)
-	if got := len(m.screens[m.matrix.session.Windows[0].Panes[0].ID].cells); got == 0 {
+	if got := len(m.screens[m.overview.session.Windows[0].Panes[0].ID].cells); got == 0 {
 		t.Error("w0 lost its content because another window closed")
 	}
 
 	// On refresh the grid follows: w2 goes, a new window comes, focus and
 	// centre stay on w1.
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "w3")
-	m.refreshMatrix()
+	m.refreshOverview()
 	var windowNames []string
-	for _, w := range m.matrix.session.Windows {
+	for _, w := range m.overview.session.Windows {
 		windowNames = append(windowNames, w.Name)
 	}
 	if got := strings.Join(windowNames, " "); got != "w0 w1 w3" {
 		t.Errorf("windows = %q", got)
 	}
-	if mv := m.matrix; mv.center == nil || mv.center.ID != w1 || mv.session.Windows[mv.focus].ID != w1 {
-		t.Errorf("focus and centre should stay on w1: %+v", mv)
+	if ov := m.overview; ov.center == nil || ov.center.ID != w1 || ov.session.Windows[ov.focus].ID != w1 {
+		t.Errorf("focus and centre should stay on w1: %+v", ov)
 	}
 
 	// The centre window closes: the windows share the screen evenly.
 	tmuxRun(t, tm, "kill-window", "-t", w1)
-	m.refreshMatrix()
-	if m.matrix.center != nil || len(m.matrix.session.Windows) != 2 {
-		t.Errorf("after the centre closed: %+v", m.matrix)
+	m.refreshOverview()
+	if m.overview.center != nil || len(m.overview.session.Windows) != 2 {
+		t.Errorf("after the centre closed: %+v", m.overview)
 	}
 
 	// Back in the list, it is read again.
 	m.handle(typed('q'))
 	if got := strings.Join(names(m.rows), " "); got != "a w0 w3" {
-		t.Errorf("list after the matrix = %q", got)
+		t.Errorf("list after the overview = %q", got)
 	}
 
-	// The whole session goes: the matrix closes with a note.
+	// The whole session goes: the overview closes with a note.
 	m.selectRow(t, "a")
-	m.handle(event{key: keyMatrix})
+	m.handle(event{key: keyOverview})
 	tmuxRun(t, tm, "new-session", "-d", "-s", "b") // keep the server alive
 	tmuxRun(t, tm, "kill-session", "-t", "a")
-	m.refreshMatrix()
-	if m.matrix != nil || m.status != "the session has gone" {
-		t.Errorf("matrix %v, status %q", m.matrix, m.status)
+	m.refreshOverview()
+	if m.overview != nil || m.status != "the session has gone" {
+		t.Errorf("overview %v, status %q", m.overview, m.status)
 	}
 }

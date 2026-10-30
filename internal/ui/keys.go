@@ -31,7 +31,7 @@ const (
 	keyTagAll
 	keyToggleMode
 	keyHalfDown
-	keyMatrix
+	keyOverview
 	keyTab
 	keyBackTab
 )
@@ -64,7 +64,7 @@ var ctrlKeys = map[byte]key{
 	0x02: keyPageUp,        // Ctrl-B
 	0x06: keyPageDown,      // Ctrl-F
 	0x04: keyHalfDown,      // Ctrl-D
-	0x0f: keyMatrix,        // Ctrl-O
+	0x0f: keyOverview,      // Ctrl-O
 	0x03: keyCancel,        // Ctrl-C
 	0x07: keyCancel,        // Ctrl-G
 }

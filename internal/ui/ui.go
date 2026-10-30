@@ -91,8 +91,8 @@ type model struct {
 	input *inputPrompt
 	// The right-click menu, while open.
 	menu *menu
-	// The matrix view, while open.
-	matrix *matrixView
+	// The overview, while open.
+	overview *overview
 	// Tagged rows, by target, so tags survive reloading the tree.
 	tags map[string]tmux.Target
 	// The last left click, to detect a double click.
@@ -202,11 +202,11 @@ func Run(o Options) (*tmux.Target, error) {
 			}
 		case <-winch:
 		case <-tick:
-			if m.matrix == nil && (!m.preview || m.help) {
+			if m.overview == nil && (!m.preview || m.help) {
 				continue
 			}
-			if m.matrix != nil {
-				m.refreshMatrix()
+			if m.overview != nil {
+				m.refreshOverview()
 			}
 			m.screens = map[string]screen{}
 		case <-quit:
@@ -400,10 +400,10 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if ev.key != keyMouse || ev.press {
 		m.status = ""
 	}
-	if m.matrix != nil {
-		return m.matrixKey(ev)
+	if m.overview != nil {
+		return m.overviewKey(ev)
 	}
-	// Outside the matrix, Tab and Shift-Tab expand and collapse.
+	// Outside the overview, Tab and Shift-Tab expand and collapse.
 	switch ev.key {
 	case keyTab:
 		ev.key = keyExpand
@@ -561,8 +561,8 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		m.preview = !m.preview
 	case keyHelp:
 		m.help, m.helpTop = true, 0
-	case keyMatrix:
-		m.openMatrix()
+	case keyOverview:
+		m.openOverview()
 	case keyCancel:
 		return true, nil, nil
 	case keyEnter:
@@ -978,8 +978,8 @@ func (m *model) render(width, height int) string {
 	m.height = height
 	m.hits = nil
 	m.previewH = 0
-	if m.matrix != nil {
-		m.drawMatrix(&b, width, height)
+	if m.overview != nil {
+		m.drawOverview(&b, width, height)
 		return b.String()
 	}
 
@@ -1156,8 +1156,8 @@ func (m *model) rowContent(n *node) []span {
 
 // footerSearch and footerNormal are the key hints on the bottom line.
 const (
-	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^O matrix  ^R regex  ^V preview  Esc quit  ? help"
-	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  ^O matrix  / search  ? help  q quit"
+	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^O overview  ^R regex  ^V preview  Esc quit  ? help"
+	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  ^O overview  / search  ? help  q quit"
 )
 
 // drawHelp draws the help in height rows from screen row y. When it does
@@ -1248,7 +1248,7 @@ var helpText = []string{
 	"| Ctrl-T\ttag every match",
 	"| Ctrl-R\tswitch between words and regex",
 	"| Ctrl-V\tshow or hide the preview",
-	"| Ctrl-O\tmatrix view of the selected session (see below)",
+	"| Ctrl-O\toverview of the selected session (see below)",
 	"| F1\tthis help",
 	"| Esc\tclose (this help, then the selector)",
 	"",
@@ -1282,7 +1282,7 @@ var helpText = []string{
 	"| / f\tback to search mode",
 	"| q\tquit",
 	"",
-	"# Matrix view (Ctrl-O)",
+	"# Overview (Ctrl-O)",
 	"All windows of the session at once, live, for watching them. From a",
 	"session row they share the screen evenly; from a window row that window",
 	"takes the middle half and the others surround it.",

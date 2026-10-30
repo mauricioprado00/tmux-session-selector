@@ -385,7 +385,7 @@ func TestMenu(t *testing.T) {
 	for _, it := range m.menu.items {
 		labels += it.label + "|"
 	}
-	if labels != "Select|Expand|Mark|Matrix View||Tag|Tag All|Tag None||Kill|Kill Tagged||Cancel|" {
+	if labels != "Select|Expand|Mark|Overview||Tag|Tag All|Tag None||Kill|Kill Tagged||Cancel|" {
 		t.Errorf("items = %s", labels)
 	}
 	m.handle(event{key: keyDown})

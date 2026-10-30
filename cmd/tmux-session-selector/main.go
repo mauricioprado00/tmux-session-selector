@@ -126,7 +126,7 @@ func run() int {
 	bind := flag.Bool("tmux-bind", false, "bind the selector to a key in tmux (see -key and -config)\nand exit; arguments after -- go into the bound command")
 	unbind := flag.Bool("tmux-unbind", false, "remove the binding -tmux-bind added, and exit")
 	key := flag.String("key", "w", "with -tmux-bind: the key, after tmux's prefix; w replaces tmux's chooser")
-	open := flag.String("open", "popup", "with -tmux-bind: popup (over the current window), full (a borderless popup\ncovering the whole terminal) or window (a new tmux window)")
+	open := flag.String("open", "full", "with -tmux-bind: full (a borderless popup covering the whole terminal),\npopup (80% over the current window) or window (a new tmux window)")
 	config := flag.String("config", "", "with -tmux-bind or -tmux-unbind: the tmux configuration file\n(default: the one tmux reads, such as ~/.tmux.conf)")
 	flag.Parse()
 

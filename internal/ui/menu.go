@@ -59,8 +59,8 @@ func (m *model) openMenu(x, y int) {
 		}},
 		expand,
 		{label: "Mark", key: 'm', hint: k("m"), action: command('m')},
-		{label: "Matrix View", key: 'z', hint: "C-o", action: func() (bool, *tmux.Target, error) {
-			m.openMatrix()
+		{label: "Overview", key: 'o', hint: "C-o", action: func() (bool, *tmux.Target, error) {
+			m.openOverview()
 			return false, nil, nil
 		}},
 		{},

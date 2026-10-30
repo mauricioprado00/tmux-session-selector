@@ -46,18 +46,19 @@ go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session-sel
 Let the binary do it:
 
 ```sh
-tmux-session-selector -tmux-bind                  # prefix + w, replacing tmux's chooser
+tmux-session-selector -tmux-bind                  # prefix + w, replacing tmux's chooser, full screen
 tmux-session-selector -tmux-bind -key W           # or another key
-tmux-session-selector -tmux-bind -open full       # a borderless popup over the whole terminal
+tmux-session-selector -tmux-bind -open popup      # an 80% popup over the current window
 tmux-session-selector -tmux-bind -open window     # a real tmux window (for tmux before 3.2)
 tmux-session-selector -tmux-bind -- -normal       # arguments after -- go into the binding
 tmux-session-selector -tmux-unbind                # remove it again
 ```
 
-`-open full` looks like a window of its own but is a popup covering the whole
-terminal, so no window is created and none shows in tmux's status line. With
+The default, `-open full`, looks like a window of its own but is a popup
+covering the whole terminal, so no window is created and none shows in tmux's
+status line. With
 `-open window` the selector runs in a real, temporary window, which it leaves
-out of the list and the matrix; the window you came from counts as the
+out of the list and the overview; the window you came from counts as the
 current one.
 
 It writes a marked block to the configuration file tmux reads (the first of
@@ -123,7 +124,7 @@ activity, `!` bell (in red), `~` silence, `M` marked pane, `Z` zoomed.
 | `Ctrl-R` | switch between words and regex mode |
 | `Ctrl-V` | show or hide the pane preview |
 | `Ctrl-/` | switch between search and normal mode |
-| `Ctrl-O` | matrix view: every window of the session at once, live |
+| `Ctrl-O` | overview: every window of the session at once, live |
 | `?` (empty query), `F1` | help panel with the query syntax and keys |
 | `<` / `>` (empty query) | scroll the windows of a session preview |
 | `Enter` | jump |
@@ -172,7 +173,7 @@ tmux-session-selector [flags] [initial query]
   -tmux-bind     bind the selector in tmux and exit (-key, -config; args after --)
   -tmux-unbind   remove that binding and exit
   -key KEY       the key for -tmux-bind, after tmux's prefix (default w)
-  -open MODE     for -tmux-bind: popup (default), full (whole terminal) or window
+  -open MODE     for -tmux-bind: full (default, whole terminal), popup (80%) or window
   -config PATH   the tmux configuration file for -tmux-bind / -tmux-unbind
   -zoom          zoom the selector's pane while it runs (for a new-window or
                  split binding; has no effect in a popup)
@@ -182,7 +183,7 @@ tmux-session-selector [flags] [initial query]
 An initial query gives a pre-filtered view, for example
 `bind W display-popup -E "tmux-session-selector s:work"`.
 
-### Matrix view
+### Overview
 
 `Ctrl-O` shows every window of the selected session at once, live, for
 watching them. From a session row they share the screen evenly; from a window
