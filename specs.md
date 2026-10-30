@@ -68,6 +68,17 @@ when `--client` names one. It is used to mark and pre-select the current row.
 
 A window linked into several sessions appears under each of them.
 
+When the selector runs in a pane of its own, rather than in a popup, that pane
+is left out of everything it shows (list, preview, matrix, counts), so it
+never previews itself. The pane is found by matching the selector's terminal
+(`tty`) against `pane_tty`; in a popup none matches. Its window goes too if
+nothing else is in it, as with the temporary window of an `--open window`
+binding, and its session if that is left empty. If that window was the
+client's current one, the window tmux flags as last (`-`), the one the client
+came from, stands in for it: it is marked current (`*`), selected at start,
+the target of `Alt-h`, and its session's active window in previews and the
+matrix.
+
 Sessions in a session group share their windows, so, like tmux's chooser,
 only one session of each group is shown unless `--all-groups` (tmux's `-G`)
 is given: the session the client is in, if it is in the group, else the

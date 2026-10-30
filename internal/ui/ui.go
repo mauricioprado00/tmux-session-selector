@@ -73,6 +73,7 @@ type model struct {
 	// otherwise typing edits the search. Ctrl-/ switches.
 	normal    bool
 	template  string // Options.Command
+	self      string // the selector's own pane, when it runs in one
 	allGroups bool
 	order     int // index into SortOrders
 	reverse   bool
@@ -141,13 +142,17 @@ func Run(o Options) (*tmux.Target, error) {
 		}
 	}
 	m.reverse = o.Reverse
+	tty := terminalName()
+	if o.Inside && tty != "" {
+		m.self, _, _ = m.tmux.PaneByTTY(tty)
+	}
 	if err := m.load(); err != nil {
 		return nil, err
 	}
 	m.setQuery()
 	m.selectCurrent()
-	if o.Zoom && o.Inside {
-		if unzoom := zoomOwnPane(o.Tmux); unzoom != nil {
+	if o.Zoom && m.self != "" {
+		if unzoom := zoomOwnPane(o.Tmux, tty); unzoom != nil {
 			defer unzoom()
 		}
 	}
@@ -209,23 +214,80 @@ func Run(o Options) (*tmux.Target, error) {
 
 // zoomOwnPane zooms the pane whose terminal is ours, if it is not zoomed
 // already, and returns a function that unzooms it, or nil.
-func zoomOwnPane(tm tmux.Tmux) func() {
-	cmd := exec.Command("tty")
-	cmd.Stdin = os.Stdin
-	out, err := cmd.Output()
-	if err != nil {
-		return nil
-	}
-	pane, zoomed, err := tm.PaneByTTY(strings.TrimSpace(string(out)))
+func zoomOwnPane(tm tmux.Tmux, tty string) func() {
+	pane, zoomed, err := tm.PaneByTTY(tty)
 	if err != nil || pane == "" || zoomed || tm.ToggleZoom(pane) != nil {
 		return nil
 	}
 	return func() {
 		// Only undo our zoom: the pane may have been closed or unzoomed since.
-		if p, zoomed, _ := tm.PaneByTTY(strings.TrimSpace(string(out))); p == pane && zoomed {
+		if p, zoomed, _ := tm.PaneByTTY(tty); p == pane && zoomed {
 			tm.ToggleZoom(pane)
 		}
 	}
+}
+
+// terminalName is the name of the selector's terminal, such as /dev/pts/3,
+// or "" if it has none.
+func terminalName() string {
+	cmd := exec.Command("tty")
+	cmd.Stdin = os.Stdin
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// withoutPane leaves the selector's own pane, self, out of sessions: the
+// pane, its window if nothing else is in it (such as the temporary window a
+// "new-window" binding opens), and its session if that is left empty. If the
+// client was on that window, here moves to the window tmux marks as last,
+// the one the client came from, which also becomes its session's active one.
+func withoutPane(sessions []*tmux.Session, self string, here tmux.Location) ([]*tmux.Session, tmux.Location) {
+	if self == "" {
+		return sessions, here
+	}
+	var kept []*tmux.Session
+	for _, s := range sessions {
+		var windows []*tmux.Window
+		for _, w := range s.Windows {
+			var panes []*tmux.Pane
+			for _, p := range w.Panes {
+				if p.ID != self {
+					panes = append(panes, p)
+				}
+			}
+			if len(panes) < len(w.Panes) && here.Pane == self {
+				here.Pane = ""
+			}
+			w.Panes = panes
+			switch {
+			case len(panes) > 0:
+				windows = append(windows, w)
+			case w.Active:
+				// Our window was the session's current one: the one before
+				// it, flagged "-", stands in for it.
+				for _, last := range s.Windows {
+					if strings.Contains(last.Flags, "-") {
+						last.Active = true
+						last.Flags = strings.Replace(last.Flags, "-", "*", 1)
+						if here.Session == s.ID && here.Window == w.ID {
+							here.Window = last.ID
+							if p := last.ActivePane(); p != nil {
+								here.Pane = p.ID
+							}
+						}
+					}
+				}
+			}
+		}
+		s.Windows = windows
+		if len(windows) > 0 {
+			kept = append(kept, s)
+		}
+	}
+	return kept, here
 }
 
 // load reads the tree from tmux.
@@ -240,6 +302,7 @@ func (m *model) load() error {
 			return err
 		}
 	}
+	sessions, here = withoutPane(sessions, m.self, here)
 	if !m.allGroups {
 		sessions = squashGroups(sessions, here.Session)
 	}

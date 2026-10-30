@@ -53,6 +53,10 @@ tmux-session-selector -tmux-bind -- -normal       # arguments after -- go into t
 tmux-session-selector -tmux-unbind                # remove it again
 ```
 
+With `-open window` the selector runs in a temporary window, which it leaves
+out of the list and the matrix, so it never previews itself; the window you
+came from counts as the current one.
+
 It writes a marked block to the configuration file tmux reads (the first of
 `~/.tmux.conf`, `$XDG_CONFIG_HOME/tmux/tmux.conf`, `~/.config/tmux/tmux.conf`
 that exists; `-config PATH` picks another) and applies it to the running tmux

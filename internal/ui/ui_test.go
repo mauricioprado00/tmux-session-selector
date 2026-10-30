@@ -541,3 +541,41 @@ func TestHelpSpans(t *testing.T) {
 		}
 	}
 }
+
+func TestWithoutPane(t *testing.T) {
+	session := func() *tmux.Session {
+		return &tmux.Session{ID: "$1", Name: "work", Windows: []*tmux.Window{
+			{ID: "@1", Index: 0, Flags: "-", Panes: []*tmux.Pane{{ID: "%1", Active: true}}},
+			{ID: "@2", Index: 1, Flags: "", Panes: []*tmux.Pane{{ID: "%2"}, {ID: "%3", Active: true}}},
+			{ID: "@9", Index: 2, Flags: "*", Active: true, Panes: []*tmux.Pane{{ID: "%9", Active: true}}},
+		}}
+	}
+	here := tmux.Location{Session: "$1", Window: "@9", Pane: "%9"}
+
+	// The temporary window of a new-window binding goes; the last window,
+	// where the client came from, becomes current.
+	ss, loc := withoutPane([]*tmux.Session{session()}, "%9", here)
+	if len(ss[0].Windows) != 2 || loc.Window != "@1" || loc.Pane != "%1" {
+		t.Errorf("temporary window: %d windows, here %+v", len(ss[0].Windows), loc)
+	}
+	if w := ss[0].Windows[0]; !w.Active || w.Flags != "*" {
+		t.Errorf("the last window should become the active one: %+v", w)
+	}
+
+	// A split: only the pane goes.
+	ss, loc = withoutPane([]*tmux.Session{session()}, "%3", tmux.Location{Session: "$1", Window: "@2", Pane: "%3"})
+	if len(ss[0].Windows) != 3 || len(ss[0].Windows[1].Panes) != 1 || loc.Window != "@2" || loc.Pane != "" {
+		t.Errorf("split pane: windows %d, panes %d, here %+v", len(ss[0].Windows), len(ss[0].Windows[1].Panes), loc)
+	}
+
+	// A session of its own goes entirely.
+	alone := &tmux.Session{ID: "$5", Windows: []*tmux.Window{{ID: "@5", Active: true, Panes: []*tmux.Pane{{ID: "%5"}}}}}
+	if ss, _ = withoutPane([]*tmux.Session{session(), alone}, "%5", here); len(ss) != 1 {
+		t.Errorf("own session should go, %d sessions left", len(ss))
+	}
+
+	// In a popup there is no pane of our own.
+	if ss, loc = withoutPane([]*tmux.Session{session()}, "", here); len(ss[0].Windows) != 3 || loc != here {
+		t.Error("no own pane should change nothing")
+	}
+}
