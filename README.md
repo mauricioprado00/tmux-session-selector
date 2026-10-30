@@ -3,6 +3,8 @@
 A replacement for tmux's `prefix` + `w` tree chooser that you filter by typing
 plain words or a regular expression, instead of tmux format expressions.
 
+![Filtering, the preview, the overview, a live window made from it, and splitting it back](docs/demo.webp)
+
 ```
 > api vim                                         [words]  3/148
 ──────────────────────────────────────────────────────────────────
