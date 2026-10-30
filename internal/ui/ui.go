@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -380,6 +381,13 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 
 // command runs the tmux chooser command for key r, pressed with Alt.
 func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
+	switch {
+	case r >= '0' && r <= '9':
+		if i := m.top + int(r-'0'); i < len(m.rows) && i < m.top+m.treeH {
+			return m.jump(m.rows[i].n.target())
+		}
+		return false, nil, nil
+	}
 	switch r {
 	case 'o', 'O':
 		m.order = (m.order + 1) % len(SortOrders)
@@ -553,10 +561,14 @@ func flagSpans(flags string) []span {
 // arrowColumn is the screen column of a row's expand arrow (see rowSpans).
 func arrowColumn(n *node) int {
 	if n.kind == sessionRow {
-		return 1
+		return 3
 	}
-	return 3
+	return 5
 }
+
+// shortcuts is how many rows, from the top of the tree area, get an Alt-digit
+// key that jumps to them.
+const shortcuts = 10
 
 // render draws the whole screen: prompt, tree and, if on, the preview.
 func (m *model) render(width, height int) string {
@@ -603,7 +615,7 @@ func (m *model) render(width, height int) string {
 			if idx == m.sel {
 				base = joinStyles(base, styleSelect)
 			}
-			drawLine(&b, 2+i, width, base, idx == m.sel, m.rowSpans(r.n)...)
+			drawLine(&b, 2+i, width, base, idx == m.sel, m.rowSpans(r.n, i)...)
 		case len(m.rows) == 0 && i == 0:
 			drawLine(&b, 2, width, styleDim, false, span{text: "  no matches"})
 		default:
@@ -645,7 +657,17 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 		span{text: "> ", style: styleCurrent}, hint, span{text: strings.Repeat(" ", gap)}, right)
 }
 
-func (m *model) rowSpans(n *node) []span {
+// rowSpans draws row n, which is on line i of the tree area.
+func (m *model) rowSpans(n *node, i int) []span {
+	shortcut := span{text: "  "}
+	if i >= 0 && i < shortcuts {
+		shortcut = span{text: strconv.Itoa(i) + " ", style: styleDim}
+	}
+	spans := m.rowContent(n)
+	return append([]span{shortcut}, spans...)
+}
+
+func (m *model) rowContent(n *node) []span {
 	marker := span{text: " "}
 	if n.current {
 		marker = span{text: "*", style: styleCurrent}
@@ -714,6 +736,7 @@ var helpText = []string{
 	"    /^api-\\d+$/   a regular expression (or Ctrl-R to switch modes)",
 	"",
 	"  Enter          jump to the selected row",
+	"  Alt-0 … Alt-9  jump to the row with that number on the left",
 	"  Up/Down        move (also Ctrl-P/N, Ctrl-K/J, PgUp/PgDn, Home/End)",
 	"  Right/Left     expand, collapse (also Tab/Shift-Tab)",
 	"  Ctrl-W/Ctrl-U  delete a word, clear the query",

@@ -107,6 +107,7 @@ The commands of tmux's own chooser work on the same letters with **Alt**
 
 | Key | Action |
 |---|---|
+| `Alt-0` … `Alt-9` | jump to the row with that number on the left |
 | `Alt-x` | kill the selected session, window or pane (asks y/n) |
 | `Alt-o` | sort by index (creation order), name, or time (most recent first) |
 | `Alt-r` | reverse the sort |

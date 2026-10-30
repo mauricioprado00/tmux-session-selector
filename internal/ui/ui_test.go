@@ -244,7 +244,7 @@ func TestMouse(t *testing.T) {
 	if m.selected().name != "editor" {
 		t.Errorf("wheel up should move to editor, got %q", m.selected().name)
 	}
-	if click(3, 3); len(m.rows) != 7 {
+	if click(5, 3); len(m.rows) != 7 {
 		t.Errorf("click on the arrow should expand editor, rows %q", names(m.rows))
 	}
 	m.lastClickRow = -1
@@ -342,5 +342,28 @@ func TestExpandCollapseAll(t *testing.T) {
 	m.handle(alt('='))
 	if len(m.rows) != 7 {
 		t.Errorf("Alt-= should expand too: %q", names(m.rows))
+	}
+}
+
+func TestShortcuts(t *testing.T) {
+	m := &model{roots: testTree(), total: 7}
+	m.setQuery()
+	m.render(80, 24)
+	b := &strings.Builder{}
+	drawLine(b, 0, 80, "", false, m.rowSpans(m.rows[2].n, 2)...)
+	if !strings.Contains(b.String(), "2 ") {
+		t.Errorf("row 2 should be labelled 2, got %q", b.String())
+	}
+	if done, target, _ := m.handle(alt('3')); !done || target.Session != "$2" || target.Window != "" {
+		t.Errorf("Alt-3 should jump to blog, got %v %+v", done, target)
+	}
+	if done, _, _ := m.handle(alt('9')); done {
+		t.Error("Alt-9 has no row and should do nothing")
+	}
+	for _, r := range "zsh" {
+		m.handle(typed(r))
+	}
+	if _, target, _ := m.handle(alt('2')); target == nil || target.Pane != "%2" {
+		t.Errorf("Alt-2 after filtering should jump to the first match, got %+v", target)
 	}
 }

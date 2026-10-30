@@ -90,7 +90,7 @@ func TestKill(t *testing.T) {
 // rowText is the text of a row as drawn, without styles.
 func (m *model) rowText(n *node) string {
 	var b strings.Builder
-	for _, s := range m.rowSpans(n) {
+	for _, s := range m.rowContent(n) {
 		b.WriteString(s.text)
 	}
 	return b.String()
