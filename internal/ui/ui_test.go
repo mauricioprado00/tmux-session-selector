@@ -520,3 +520,24 @@ func TestNormalModeShortcutsAndSearch(t *testing.T) {
 		t.Errorf("N should wrap backwards to s13, got %q", m.selected().name)
 	}
 }
+
+func TestHelpSpans(t *testing.T) {
+	text := func(s []span) (out string) {
+		for _, x := range s {
+			out += "[" + x.style + "]" + x.text
+		}
+		return out
+	}
+	tests := map[string]string{
+		"# Mouse":              "[1;36]  Mouse",
+		"| j k\tdown / up":     "[]    [33]j k[]" + strings.Repeat(" ", helpKeyWidth-3) + "down / up",
+		"$ !zsh\trows":         "[]    [32]!zsh[]" + strings.Repeat(" ", helpKeyWidth-4) + "rows",
+		"in NORMAL or SEARCH.": "[]  []in [1;7]NORMAL[] or [1;7]SEARCH[].",
+		"":                     "[]  ",
+	}
+	for line, want := range tests {
+		if got := text(helpSpans(line)); got != want {
+			t.Errorf("helpSpans(%q) = %q, want %q", line, got, want)
+		}
+	}
+}

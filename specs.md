@@ -132,7 +132,8 @@ line shows the order, e.g. `(sort: time, reversed)`, as tmux's does.
 ### 6.2 Help panel
 
 `?` (while the query is empty) or `F1` replaces the tree and preview with a
-help panel: the query syntax (words, `!`, `s:`, `w:`, `c:`, `d:`, `/regex/`,
+help panel, in colour (headings bold cyan, keys yellow, search examples green,
+the mode names in the prompt's `NORMAL` style): the query syntax (words, `!`, `s:`, `w:`, `c:`, `d:`, `/regex/`,
 smart case), every key binding and the mouse actions. When it does not fit,
 `Up`/`Down`, `PgUp`/`PgDn`, `Home`/`End` and the wheel scroll it, and its last
 row says so. Any other key closes it; keys other than `Esc`, `Enter` and `F1`

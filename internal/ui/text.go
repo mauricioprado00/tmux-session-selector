@@ -19,6 +19,9 @@ const (
 	styleActivity = "1;33"
 	styleTagged   = "1;35"
 	styleNormal   = "1;7"
+	styleHeading  = "1;36"
+	styleKey      = "33"
+	styleExample  = "32"
 )
 
 // span is a piece of a screen line. hl holds byte ranges of text to show as

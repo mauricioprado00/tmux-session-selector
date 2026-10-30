@@ -1087,7 +1087,7 @@ func (m *model) drawHelp(b *strings.Builder, y, width, height int) {
 	for i := 0; i < room; i++ {
 		var s []span
 		if m.helpTop+i < len(helpText) {
-			s = []span{{text: helpText[m.helpTop+i]}}
+			s = helpSpans(helpText[m.helpTop+i])
 		}
 		drawLine(b, y+i, width, "", false, s...)
 	}
@@ -1098,54 +1098,113 @@ func (m *model) drawHelp(b *strings.Builder, y, width, height int) {
 	}
 }
 
-// helpText is shown in place of the tree while help is open.
+// helpSpans styles a line of helpText, which marks its lines with a
+// prefix: "# " a heading, "| " a key and its meaning, "$ " a search example
+// and its meaning (key or example and meaning separated by a tab), and
+// anything else plain text.
+func helpSpans(line string) []span {
+	prefix, rest := "", line
+	if len(line) >= 2 {
+		prefix, rest = line[:2], line[2:]
+	}
+	left, right, _ := strings.Cut(rest, "\t")
+	switch prefix {
+	case "# ":
+		return []span{{text: "  " + rest, style: styleHeading}}
+	case "| ", "$ ":
+		style := styleKey
+		if prefix == "$ " {
+			style = styleExample
+		}
+		pad := strings.Repeat(" ", max(1, helpKeyWidth-textWidth(left)))
+		return []span{{text: "    "}, {text: left, style: style}, {text: pad + right}}
+	}
+	// Mode names look like the NORMAL indicator on the prompt line.
+	spans := []span{{text: "  "}}
+	for line != "" {
+		i := strings.Index(line, "SEARCH")
+		if j := strings.Index(line, "NORMAL"); j >= 0 && (i < 0 || j < i) {
+			i = j
+		}
+		if i < 0 {
+			spans = append(spans, span{text: line})
+			break
+		}
+		spans = append(spans, span{text: line[:i]}, span{text: line[i : i+6], style: styleNormal})
+		line = line[i+6:]
+	}
+	return spans
+}
+
+// helpKeyWidth is the width of the key column of the help.
+const helpKeyWidth = 22
+
+// helpText is shown in place of the tree while help is open; see helpSpans
+// for its markup.
 var helpText = []string{
-	"  Two modes, switched with Ctrl-/. In SEARCH mode (the default) typing",
-	"  filters the list. In NORMAL mode keys are commands, as in tmux's own",
-	"  chooser, with vim motions.",
+	"# Two modes, switched with Ctrl-/",
+	"In SEARCH mode (the default) typing filters the list. In NORMAL mode keys",
+	"are commands, as in tmux's own chooser, with vim motions.",
 	"",
-	"  Search: every word must match; case is ignored unless the query has an",
-	"  uppercase letter. Dimmed rows only contain a match.",
-	"    api vim       rows with both words, in any field",
-	"    !zsh          rows without zsh",
-	"    s:api  w:edit  c:vim  d:www   session, window, command, directory",
-	"    /^api-\\d+$/   a regular expression (or Ctrl-R to switch)",
+	"# Searching",
+	"Every word must match; case is ignored unless the query has an uppercase",
+	"letter. Dimmed rows are shown only because something inside them matches.",
+	"$ api vim\trows with both words, in any field",
+	"$ !zsh\trows without zsh",
+	"$ s:api  w:edit\tsession name, window name or index",
+	"$ c:vim  d:www\tpane command, pane directory",
+	"$ /^api-\\d+$/\ta regular expression (or Ctrl-R to switch)",
 	"",
-	"  Both modes",
-	"    Enter              jump to the selected row",
-	"    Up/Down Ctrl-P/N   move; PgUp/PgDn Ctrl-B/F page; Ctrl-D half page",
-	"    Home/End           first / last row",
-	"    Right/Left Tab     expand / collapse",
-	"    Ctrl-T             tag every match",
-	"    Ctrl-R  Ctrl-V     regex mode; show or hide the preview",
-	"    F1                 this help",
-	"    Esc                close (this help, then the selector)",
+	"# Both modes",
+	"| Enter\tjump to the selected row",
+	"| Up Down  Ctrl-P/N\tmove",
+	"| PgUp PgDn  Ctrl-B/F\tpage; Ctrl-D half a page down",
+	"| Home End\tfirst / last row",
+	"| Right Left  Tab\texpand / collapse",
+	"| Ctrl-T\ttag every match",
+	"| Ctrl-R\tswitch between words and regex",
+	"| Ctrl-V\tshow or hide the preview",
+	"| F1\tthis help",
+	"| Esc\tclose (this help, then the selector)",
 	"",
-	"  Search mode (letters type; tmux's keys with Alt)",
-	"    Alt-0 … Alt-9      jump to the row labelled M-0 … M-9",
-	"    Alt-t Alt-T        tag / untag all      Alt-x Alt-X  kill / kill tagged",
-	"    Alt-:              command for tagged   Alt-m Alt-M  mark / unmark pane",
-	"    Alt-o Alt-r        sort / reverse       Alt-h        back to start pane",
-	"    Alt-+ Alt--        expand / collapse all",
-	"    Ctrl-W Ctrl-U      delete a word / clear the query",
-	"    ?  < >             help; scroll a session preview (empty query only)",
+	"# Search mode: letters type, tmux's keys are on Alt",
+	"| Alt-0 … Alt-9\tjump to the row labelled M-0 … M-9",
+	"| Alt-t  Alt-T\ttag or untag the row / untag all",
+	"| Alt-x  Alt-X\tkill the row / kill the tagged rows (asks y/n)",
+	"| Alt-:\trun a command on the tagged rows (%% is each one)",
+	"| Alt-m  Alt-M\tmark / unmark the pane",
+	"| Alt-o  Alt-r\tsort by index, name or time / reverse",
+	"| Alt-h\tback to the pane the selector started from",
+	"| Alt-+  Alt--\texpand / collapse everything",
+	"| Ctrl-W  Ctrl-U\tdelete a word / clear the query",
+	"| ?  < >\thelp; scroll a session preview (empty query only)",
 	"",
-	"  Normal mode (tmux's keys)",
-	"    j k  h l           down / up, collapse / expand (also - +)",
-	"    g G  Ctrl-U/D      first / last, half page up / down",
-	"    0 … 9  M-a … M-z   jump to the row with that label",
-	"    t T  Ctrl-T        tag / untag all / tag all",
-	"    x X  :             kill / kill tagged / command for tagged (%% = item)",
-	"    m M  O r  H        mark / unmark, sort / reverse, back to start pane",
-	"    n N                next / previous match of the search",
-	"    v  < >  ?          preview, scroll a session preview, help",
-	"    / f  q             back to search mode, quit",
+	"# Normal mode: tmux's keys",
+	"| j k\tdown / up",
+	"| h l  - +\tcollapse / expand",
+	"| g G\tfirst / last row",
+	"| Ctrl-U  Ctrl-D\thalf a page up / down",
+	"| 0 … 9  M-a … M-z\tjump to the row with that label",
+	"| t T\ttag or untag the row / untag all",
+	"| x X\tkill the row / kill the tagged rows (asks y/n)",
+	"| :\trun a command on the tagged rows (%% is each one)",
+	"| m M\tmark / unmark the pane",
+	"| O r\tsort by index, name or time / reverse",
+	"| H\tback to the pane the selector started from",
+	"| n N\tnext / previous row matching the search",
+	"| v\tshow or hide the preview",
+	"| < >\tscroll a session preview",
+	"| / f\tback to search mode",
+	"| q\tquit",
 	"",
-	"  Mouse: click selects, double-click jumps, the wheel moves (over a",
-	"  session preview it scrolls the windows), a click on an arrow expands,",
-	"  collapses or scrolls, a click in the preview jumps to the pane or",
-	"  window under it, a right-click opens a menu of commands, and a click",
-	"  on the bottom line opens this help.",
+	"# Mouse",
+	"| click\tselect",
+	"| double-click\tjump",
+	"| wheel\tmove; over a session preview, scroll its windows",
+	"| click an arrow\texpand, collapse, or scroll a session preview",
+	"| click the preview\tjump to the pane or window under the pointer",
+	"| right-click\ta menu of commands",
+	"| click the footer\tthis help",
 	"",
-	"  Arrow keys and the wheel scroll this help; any other key closes it.",
+	"Arrow keys and the wheel scroll this help; any other key closes it.",
 }
