@@ -14,11 +14,28 @@ import (
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
 
-// The binding is kept between these lines, so it can be replaced or removed
-// without touching the rest of the file.
+// What a binding opens.
 const (
-	begin          = "# >>> tmux-session-selector >>>"
-	end            = "# <<< tmux-session-selector <<<"
+	// Select is the selector's list, to search and choose a window.
+	Select = "select"
+	// Overview is the overview of the current session's windows.
+	Overview = "overview"
+)
+
+// Actions are the values Binding.Action takes.
+var Actions = []string{Select, Overview}
+
+// Each binding is kept between its own pair of lines, so it can be replaced
+// or removed without touching the rest of the file. The select binding's
+// lines are those of the first version, which had only it.
+func markers(action string) (begin, end string) {
+	if action == Overview {
+		return "# >>> tmux-session-selector overview >>>", "# <<< tmux-session-selector overview <<<"
+	}
+	return "# >>> tmux-session-selector >>>", "# <<< tmux-session-selector <<<"
+}
+
+const (
 	keyPrefix      = "# key: "
 	previousPrefix = "# previous: "
 )
@@ -42,9 +59,10 @@ func DefaultPath(home, xdgConfigHome string) string {
 
 // Binding is the selector's key binding in tmux's prefix table.
 type Binding struct {
-	Key  string   // e.g. "w"
-	Argv []string // the selector: its absolute path, then any arguments
-	Open string   // Popup, Full or Window
+	Action string   // Select or Overview
+	Key    string   // e.g. "w"
+	Argv   []string // the selector: its absolute path, then any arguments
+	Open   string   // Popup, Full or Window
 	// Border keeps the border of a Full popup, for tmux 3.2, which cannot
 	// draw one without.
 	Border bool
@@ -94,6 +112,7 @@ func (b Binding) Line() string {
 }
 
 func (b Binding) block() string {
+	begin, end := markers(b.Action)
 	lines := []string{begin,
 		"# Added by tmux-session-selector -tmux-bind; remove it with -tmux-unbind.",
 		keyPrefix + b.Key}
@@ -103,10 +122,11 @@ func (b Binding) block() string {
 	return strings.Join(append(lines, b.Line(), end), "\n") + "\n"
 }
 
-// Add returns content with b's block in place of an existing one, or else
-// appended after a blank line, which Remove takes away again.
+// Add returns content with b's block in place of an existing one for the
+// same action, or else appended after a blank line, which Remove takes away
+// again.
 func Add(content string, b Binding) string {
-	rest, _ := Remove(content)
+	rest, _ := Remove(content, b.Action)
 	if rest != "" && !strings.HasSuffix(rest, "\n") {
 		rest += "\n"
 	}
@@ -116,10 +136,11 @@ func Add(content string, b Binding) string {
 	return rest + b.block()
 }
 
-// Remove returns content without the selector's block, and the binding the
-// block held (only its Key and Previous are set), or nil if there is none.
-// The blank line Add puts before the block goes with it.
-func Remove(content string) (string, *Binding) {
+// Remove returns content without the selector's block for action, and the
+// binding the block held (only its Action, Key and Previous are set), or nil
+// if there is none. The blank line Add puts before the block goes with it.
+func Remove(content, action string) (string, *Binding) {
+	begin, end := markers(action)
 	lines := strings.SplitAfter(content, "\n")
 	start, stop := -1, -1
 	for i, l := range lines {
@@ -137,7 +158,7 @@ func Remove(content string) (string, *Binding) {
 	if start < 0 || stop < 0 {
 		return content, nil
 	}
-	b := &Binding{}
+	b := &Binding{Action: action}
 	for _, l := range lines[start:stop] {
 		l = strings.TrimRight(l, "\r\n")
 		if v, ok := strings.CutPrefix(l, keyPrefix); ok {
@@ -163,7 +184,7 @@ func Install(tm tmux.Tmux, path string, b Binding) (live bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	_, old := Remove(content)
+	_, old := Remove(content, b.Action)
 	live = serverRunning(tm)
 	switch {
 	case old != nil && old.Key == b.Key:
@@ -184,16 +205,16 @@ func Install(tm tmux.Tmux, path string, b Binding) (live bool, err error) {
 	return err == nil, err
 }
 
-// Uninstall removes the selector's block from the configuration file at
-// path and, in the running tmux server if there is one, unbinds its key and
-// restores what the key did before. It returns the binding removed, or nil
-// if the file had none.
-func Uninstall(tm tmux.Tmux, path string) (removed *Binding, live bool, err error) {
+// Uninstall removes the selector's block for action from the configuration
+// file at path and, in the running tmux server if there is one, unbinds its
+// key and restores what the key did before. It returns the binding removed,
+// or nil if the file had none.
+func Uninstall(tm tmux.Tmux, path, action string) (removed *Binding, live bool, err error) {
 	content, mode, err := read(path)
 	if err != nil {
 		return nil, false, err
 	}
-	rest, old := Remove(content)
+	rest, old := Remove(content, action)
 	if old == nil {
 		return nil, false, nil
 	}

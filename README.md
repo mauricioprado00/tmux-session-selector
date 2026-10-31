@@ -48,12 +48,14 @@ go install github.com/mauricioprado00/tmux-session-selector/cmd/tmux-session-sel
 Let the binary do it:
 
 ```sh
-tmux-session-selector -tmux-bind                  # prefix + w, replacing tmux's chooser, full screen
-tmux-session-selector -tmux-bind -key W           # or another key
+tmux-session-selector -tmux-bind                  # prefix + w: the selector, replacing tmux's chooser,
+                                                  # and prefix + O: the overview, both full screen
+tmux-session-selector -tmux-bind -action select   # only one of them (or -action overview)
+tmux-session-selector -tmux-bind -key W -overview-key E   # other keys
 tmux-session-selector -tmux-bind -open popup      # an 80% popup over the current window
 tmux-session-selector -tmux-bind -open window     # a real tmux window (for tmux before 3.2)
 tmux-session-selector -tmux-bind -- -normal       # arguments after -- go into the binding
-tmux-session-selector -tmux-unbind                # remove it again
+tmux-session-selector -tmux-unbind                # remove both again (or one, with -action)
 ```
 
 The default, `-open full`, looks like a window of its own but is a popup
@@ -172,9 +174,12 @@ tmux-session-selector [flags] [initial query]
   -sort ORDER    index (default), name or time
   -reverse       reverse the sort order
   -all-groups    show every session of a session group, not just one
-  -tmux-bind     bind the selector in tmux and exit (-key, -config; args after --)
-  -tmux-unbind   remove that binding and exit
-  -key KEY       the key for -tmux-bind, after tmux's prefix (default w)
+  -overview      open straight into the overview of the current session
+  -tmux-bind     bind the selector and the overview in tmux and exit (args after --)
+  -tmux-unbind   remove those bindings and exit
+  -action WHICH  for -tmux-bind / -tmux-unbind: both (default), select or overview
+  -key KEY       the selector's key for -tmux-bind, after tmux's prefix (default w)
+  -overview-key KEY  the overview's key for -tmux-bind (default O)
   -open MODE     for -tmux-bind: full (default, whole terminal), popup (80%) or window
   -config PATH   the tmux configuration file for -tmux-bind / -tmux-unbind
   -zoom          zoom the selector's pane while it runs (for a new-window or
@@ -187,7 +192,7 @@ An initial query gives a pre-filtered view, for example
 
 ### Overview
 
-`Ctrl-O` shows every window of the selected session at once, live, for
+`prefix` + `O` (see "Bind it"), `-overview`, or `Ctrl-O` in the list shows every window of the selected session at once, live, for
 watching them. From a session row they share the screen evenly; from a window
 row that window takes the middle half and the others surround it. Arrows (or
 `hjkl`) move the focus, wrapping at the edges; `Tab` steps through the windows

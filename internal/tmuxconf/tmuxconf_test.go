@@ -10,6 +10,8 @@ import (
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
 
+var selectBegin, _ = markers(Select)
+
 func TestDefaultPath(t *testing.T) {
 	home := t.TempDir()
 	xdg := filepath.Join(home, "xdg")
@@ -32,14 +34,14 @@ func TestAddRemove(t *testing.T) {
 		Previous: "bind-key -T prefix w choose-tree -Zw"}
 	for _, original := range []string{"", "set -g mouse on\n", "set -g mouse on", "a\n\n"} {
 		added := Add(original, b)
-		if !strings.Contains(added, b.Line()) || strings.Count(added, begin) != 1 {
+		if !strings.Contains(added, b.Line()) || strings.Count(added, selectBegin) != 1 {
 			t.Fatalf("Add(%q) = %q", original, added)
 		}
 		again := Add(added, Binding{Key: "W", Argv: []string{"/sel"}, Open: Popup})
-		if strings.Count(again, begin) != 1 || !strings.Contains(again, "# key: W") {
+		if strings.Count(again, selectBegin) != 1 || !strings.Contains(again, "# key: W") {
 			t.Errorf("adding twice should replace the block: %q", again)
 		}
-		rest, got := Remove(added)
+		rest, got := Remove(added, Select)
 		if got == nil || got.Key != "w" || got.Previous != b.Previous {
 			t.Errorf("Remove found %+v", got)
 		}
@@ -51,7 +53,7 @@ func TestAddRemove(t *testing.T) {
 			t.Errorf("Remove(Add(%q)) = %q", original, rest)
 		}
 	}
-	if rest, got := Remove("set -g mouse on\n"); got != nil || rest != "set -g mouse on\n" {
+	if rest, got := Remove("set -g mouse on\n", Select); got != nil || rest != "set -g mouse on\n" {
 		t.Errorf("Remove without a block = %q, %+v", rest, got)
 	}
 }
@@ -144,7 +146,7 @@ func TestInstallUninstall(t *testing.T) {
 	if got := binding("w"); got != "bind-key -T prefix w choose-tree -Zw" {
 		t.Errorf("w should be restored, got %q", got)
 	}
-	removed, live, err := Uninstall(tm, config)
+	removed, live, err := Uninstall(tm, config, Select)
 	if err != nil || !live || removed == nil || removed.Key != "W" {
 		t.Fatalf("Uninstall = %+v, %v, %v", removed, live, err)
 	}
@@ -154,7 +156,28 @@ func TestInstallUninstall(t *testing.T) {
 	if data, _ := os.ReadFile(config); string(data) != original {
 		t.Errorf("config after Uninstall = %q, want the original", data)
 	}
-	if removed, _, _ := Uninstall(tm, config); removed != nil {
+	if removed, _, _ := Uninstall(tm, config, Select); removed != nil {
 		t.Error("a second Uninstall should find nothing")
+	}
+}
+
+func TestTwoBindings(t *testing.T) {
+	sel := Binding{Action: Select, Key: "w", Argv: []string{"/sel"}, Open: Full}
+	ov := Binding{Action: Overview, Key: "O", Argv: []string{"/sel", "-overview"}, Open: Full}
+	both := Add(Add("set -g mouse on\n", sel), ov)
+	if !strings.Contains(both, sel.Line()) || !strings.Contains(both, ov.Line()) {
+		t.Fatalf("both bindings should be in the file:\n%s", both)
+	}
+	// Replacing one leaves the other.
+	both = Add(both, Binding{Action: Overview, Key: "W", Argv: []string{"/sel", "-overview"}, Open: Full})
+	if strings.Count(both, "-overview") != 1 || !strings.Contains(both, "# key: W") || !strings.Contains(both, sel.Line()) {
+		t.Errorf("replacing the overview binding:\n%s", both)
+	}
+	rest, removed := Remove(both, Overview)
+	if removed == nil || removed.Key != "W" || removed.Action != Overview || strings.Contains(rest, "overview") || !strings.Contains(rest, sel.Line()) {
+		t.Errorf("removing the overview binding left:\n%s", rest)
+	}
+	if rest, _ = Remove(rest, Select); rest != "set -g mouse on\n" {
+		t.Errorf("removing both should restore the file, got %q", rest)
 	}
 }

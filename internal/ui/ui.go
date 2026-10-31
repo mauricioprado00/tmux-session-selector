@@ -47,6 +47,9 @@ type Options struct {
 	Zoom bool
 	// Normal starts in normal mode instead of search mode.
 	Normal bool
+	// Overview opens straight into the overview of the current session; Esc
+	// or q then closes the selector.
+	Overview bool
 }
 
 type model struct {
@@ -71,17 +74,20 @@ type model struct {
 	helpTop  int // first help line shown, when the help is scrolled
 	// normal is normal mode, where keys are commands as in tmux's chooser;
 	// otherwise typing edits the search. Ctrl-/ switches.
-	normal    bool
-	template  string // Options.Command
-	self      string // the selector's own pane, when it runs in one
-	allGroups bool
-	order     int // index into SortOrders
-	reverse   bool
-	screens   map[string]screen
-	height    int   // screen height at the last render
-	previewY  int   // screen row where the preview starts
-	previewH  int   // preview height at the last render; 0 when not shown
-	hits      []hit // clickable boxes of the preview
+	normal bool
+	// overviewOnly is set when the selector opened straight into the
+	// overview, so leaving it closes the selector.
+	overviewOnly bool
+	template     string // Options.Command
+	self         string // the selector's own pane, when it runs in one
+	allGroups    bool
+	order        int // index into SortOrders
+	reverse      bool
+	screens      map[string]screen
+	height       int   // screen height at the last render
+	previewY     int   // screen row where the preview starts
+	previewH     int   // preview height at the last render; 0 when not shown
+	hits         []hit // clickable boxes of the preview
 	// The first window shown in a session preview, and for which session.
 	winOffset    int
 	winOffsetFor *tmux.Session
@@ -154,6 +160,9 @@ func Run(o Options) (*tmux.Target, error) {
 	}
 	m.setQuery()
 	m.selectCurrent()
+	if o.Overview {
+		m.openStartOverview()
+	}
 	if o.Zoom && m.self != "" {
 		if unzoom := zoomOwnPane(o.Tmux, tty); unzoom != nil {
 			defer unzoom()

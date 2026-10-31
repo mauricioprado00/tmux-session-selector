@@ -105,12 +105,12 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 		case ev.r == 'o':
 			ov.toggleCenter()
 		case ev.r == 'q':
-			m.closeOverview()
+			return m.leaveOverview()
 		}
 	case keyOverview:
 		ov.toggleCenter()
 	case keyCancel:
-		m.closeOverview()
+		return m.leaveOverview()
 	case keyEnter:
 		return m.overviewJump()
 	case keyMouse:
@@ -141,6 +141,30 @@ func (ov *overview) typeDigit(r rune) {
 			ov.focus = i
 		}
 	}
+}
+
+// openStartOverview opens straight into the overview of the current
+// session, or else the first one, for --overview; leaving it then closes the
+// selector.
+func (m *model) openStartOverview() {
+	n := m.selected()
+	for n != nil && n.parent != nil {
+		n = n.parent
+	}
+	if n != nil {
+		m.sel, m.overviewOnly = m.indexOf(n), true
+		m.openOverview()
+	}
+}
+
+// leaveOverview goes back to the list, or closes the selector if it opened
+// straight into the overview.
+func (m *model) leaveOverview() (done bool, target *tmux.Target, err error) {
+	if m.overviewOnly {
+		return true, nil, nil
+	}
+	m.closeOverview()
+	return false, nil, nil
 }
 
 // closeOverview goes back to the list, reading it again if windows opened or
@@ -519,8 +543,12 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		ov.cells[i].y1++
 	}
 	c.draw(b, 1)
+	leave := "back"
+	if m.overviewOnly {
+		leave = "close"
+	}
 	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  w make a live window  Enter switch  Esc/q back"})
+		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  w make a live window  Enter switch  Esc/q " + leave})
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.

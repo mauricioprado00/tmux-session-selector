@@ -289,3 +289,21 @@ func TestGuillotineCentred(t *testing.T) {
 		t.Errorf("centre = %+v, want about 100 wide", centre)
 	}
 }
+
+func TestStartInOverview(t *testing.T) {
+	m := &model{roots: testTree(), total: 7, screens: map[string]screen{}}
+	m.setQuery()
+	m.selectCurrent() // the current window, editor in session api
+	m.openStartOverview()
+	if m.overview == nil || m.overview.session.Name != "api" || m.overview.center != nil {
+		t.Fatalf("overview = %+v, want api, shared evenly", m.overview)
+	}
+	m.render(120, 40)
+	if done, _, _ := m.handle(event{key: keyCancel}); !done {
+		t.Error("Esc in an overview opened straight away should close the selector")
+	}
+	m.overviewOnly = false
+	if done, _, _ := m.handle(typed('q')); done || m.overview != nil {
+		t.Error("q in an overview opened from the list should go back to the list")
+	}
+}

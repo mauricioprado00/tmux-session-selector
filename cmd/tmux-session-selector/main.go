@@ -35,61 +35,100 @@ Press F1 in the selector for the keys.
 
 // tmuxBinding adds (bind) or removes the selector's key binding, in the
 // configuration file and in the running tmux server, and reports what it did.
-func tmuxBinding(bind bool, key, open, config string, args []string) int {
+// bindingFlags are the options of -tmux-bind and -tmux-unbind.
+type bindingFlags struct {
+	action      string // both, select or overview
+	key         string // for the select binding
+	overviewKey string // for the overview binding
+	open        string
+	config      string
+}
+
+// tmuxBinding adds (bind) or removes the selector's key bindings, in the
+// configuration file and in the running tmux server, and reports what it did.
+func tmuxBinding(bind bool, f bindingFlags, args []string) int {
 	fail := func(err error) int {
 		fmt.Fprintln(os.Stderr, "tmux-session-selector:", err)
 		return 1
 	}
-	if config == "" {
+	usage := func(msg string) int {
+		fmt.Fprintln(os.Stderr, "tmux-session-selector: "+msg)
+		return 2
+	}
+	actions := tmuxconf.Actions
+	switch {
+	case f.action == "both":
+	case slices.Contains(tmuxconf.Actions, f.action):
+		actions = []string{f.action}
+	default:
+		return usage("-action must be both, " + strings.Join(tmuxconf.Actions, " or "))
+	}
+	if f.config == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fail(err)
 		}
-		config = tmuxconf.DefaultPath(home, os.Getenv("XDG_CONFIG_HOME"))
+		f.config = tmuxconf.DefaultPath(home, os.Getenv("XDG_CONFIG_HOME"))
 	}
 	tm := tmux.Tmux{}
 	if !bind {
-		removed, live, err := tmuxconf.Uninstall(tm, config)
-		switch {
-		case err != nil:
-			return fail(err)
-		case removed == nil:
-			fmt.Printf("no tmux-session-selector binding in %s\n", config)
-		default:
-			fmt.Printf("removed the binding of prefix + %s from %s\n", removed.Key, config)
-			if live {
-				fmt.Printf("and from the running tmux server, restoring: %s\n", orNothing(removed.Previous))
+		for _, action := range actions {
+			removed, live, err := tmuxconf.Uninstall(tm, f.config, action)
+			switch {
+			case err != nil:
+				return fail(err)
+			case removed == nil:
+				fmt.Printf("no %s binding in %s\n", action, f.config)
+			default:
+				fmt.Printf("removed the %s binding of prefix + %s from %s\n", action, removed.Key, f.config)
+				if live {
+					fmt.Printf("  and from the running tmux server, restoring: %s\n", orNothing(removed.Previous))
+				}
 			}
 		}
 		return 0
 	}
-	if key == "" || strings.ContainsAny(key, " \t\n") {
-		fmt.Fprintln(os.Stderr, "tmux-session-selector: -key must be a tmux key name, such as w, W or C-s")
-		return 2
+	keys := map[string]string{tmuxconf.Select: f.key, tmuxconf.Overview: f.overviewKey}
+	for _, action := range actions {
+		if k := keys[action]; k == "" || strings.ContainsAny(k, " \t\n") {
+			return usage("-key and -overview-key must be tmux key names, such as w, O or C-s")
+		}
 	}
-	if !slices.Contains(tmuxconf.Opens, open) {
-		fmt.Fprintln(os.Stderr, "tmux-session-selector: -open must be one of "+strings.Join(tmuxconf.Opens, ", "))
-		return 2
+	if len(actions) == 2 && f.key == f.overviewKey {
+		return usage("-key and -overview-key must differ")
+	}
+	if !slices.Contains(tmuxconf.Opens, f.open) {
+		return usage("-open must be one of " + strings.Join(tmuxconf.Opens, ", "))
 	}
 	self, err := os.Executable()
 	if err != nil {
 		return fail(err)
 	}
 	version, _ := tm.Run("-V")
-	b := tmuxconf.Binding{Key: key, Argv: append([]string{self}, args...), Open: open}
-	if supported, note := tmuxconf.Supported(open, version); note != "" {
-		b.Open, b.Border = supported, supported == tmuxconf.Full
+	open, note := tmuxconf.Supported(f.open, version)
+	if note != "" {
 		fmt.Printf("%s: %s.\n", strings.TrimSpace(version), note)
 	}
-	live, err := tmuxconf.Install(tm, config, b)
-	if err != nil {
-		return fail(err)
+	anyLive := false
+	for _, action := range actions {
+		argv := []string{self}
+		if action == tmuxconf.Overview {
+			argv = append(argv, "-overview")
+		}
+		b := tmuxconf.Binding{Action: action, Key: keys[action], Argv: append(argv, args...),
+			Open: open, Border: note != "" && open == tmuxconf.Full}
+		live, err := tmuxconf.Install(tm, f.config, b)
+		if err != nil {
+			return fail(err)
+		}
+		anyLive = anyLive || live
+		fmt.Printf("bound prefix + %s to the %s in %s:\n  %s\n", b.Key, map[string]string{
+			tmuxconf.Select: "selector", tmuxconf.Overview: "overview"}[action], f.config, b.Line())
 	}
-	fmt.Printf("bound prefix + %s in %s:\n  %s\n", key, config, b.Line())
-	if live {
-		fmt.Println("It is active in the running tmux server now.")
+	if anyLive {
+		fmt.Println("Active in the running tmux server now.")
 	} else {
-		fmt.Println("No tmux server is running; it takes effect when tmux starts.")
+		fmt.Println("No tmux server is running; the bindings take effect when tmux starts.")
 	}
 	return 0
 }
@@ -125,7 +164,10 @@ func run() int {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	bind := flag.Bool("tmux-bind", false, "bind the selector to a key in tmux (see -key and -config)\nand exit; arguments after -- go into the bound command")
 	unbind := flag.Bool("tmux-unbind", false, "remove the binding -tmux-bind added, and exit")
-	key := flag.String("key", "w", "with -tmux-bind: the key, after tmux's prefix; w replaces tmux's chooser")
+	action := flag.String("action", "both", "with -tmux-bind or -tmux-unbind: both, select (the list) or overview")
+	key := flag.String("key", "w", "with -tmux-bind: the selector's key, after tmux's prefix; w replaces tmux's chooser")
+	overviewKey := flag.String("overview-key", "O", "with -tmux-bind: the overview's key, after tmux's prefix")
+	overview := flag.Bool("overview", false, "open straight into the overview of the current session")
 	open := flag.String("open", "full", "with -tmux-bind: full (a borderless popup covering the whole terminal),\npopup (80% over the current window) or window (a new tmux window)")
 	config := flag.String("config", "", "with -tmux-bind or -tmux-unbind: the tmux configuration file\n(default: the one tmux reads, such as ~/.tmux.conf)")
 	flag.Parse()
@@ -135,7 +177,8 @@ func run() int {
 		return 0
 	}
 	if *bind || *unbind {
-		return tmuxBinding(*bind, *key, *open, *config, flag.Args())
+		return tmuxBinding(*bind, bindingFlags{action: *action, key: *key, overviewKey: *overviewKey,
+			open: *open, config: *config}, flag.Args())
 	}
 	if !slices.Contains(ui.SortOrders, *sortOrder) {
 		fmt.Fprintf(os.Stderr, "tmux-session-selector: -sort must be one of %s\n", strings.Join(ui.SortOrders, ", "))
@@ -163,6 +206,7 @@ func run() int {
 		AllGroups: *allGroups,
 		Zoom:      *zoom,
 		Normal:    *normal,
+		Overview:  *overview,
 	})
 	if err == nil && target != nil {
 		err = tm.Attach(*target)

@@ -312,8 +312,11 @@ right-click menu shows the key of the current mode for each item.
 
 ### 6.9 Overview
 
-`Ctrl-O` (both modes, or Overview in the right-click menu) replaces the
-list with every window of the selected row's session at once, for watching
+`--overview` opens the selector straight into the overview of the client's
+current session, its windows sharing the screen evenly with the focus on the
+current window; there is no list behind it, so `Esc` and `q` close the
+selector. Otherwise, `Ctrl-O` (both modes, or Overview in the right-click
+menu) replaces the list with every window of the selected row's session at once, for watching
 them. Each window is drawn as in the preview (§6.4): its panes in their
 layout, in colour, and live, captured again every `--refresh`.
 
@@ -511,10 +514,14 @@ The temporary window closes itself when the program exits.
 
 `--tmux-bind` and `--tmux-unbind` do 9.1 or 9.2 for the user, then exit.
 
-- `--tmux-bind [--key KEY] [--open popup|window] [--config PATH] [-- ARGS…]`
-  binds `KEY` (default `w`, replacing tmux's chooser) in tmux's prefix table
-  to the selector, given by the binary's absolute path (`os.Executable`), so
-  tmux's `PATH` does not matter; `ARGS` are added to the bound command.
+- `--tmux-bind [--action both|select|overview] [--key KEY] [--overview-key KEY]
+  [--open full|popup|window] [--config PATH] [-- ARGS…]` binds, in tmux's
+  prefix table, the selector (`select`: the list, on `--key`, default `w`,
+  replacing tmux's chooser) and the overview (`overview`: the selector run
+  with `--overview`, on `--overview-key`, default `O`), or just the one
+  `--action` names; both by default. The two keys must differ. The selector is
+  given by the binary's absolute path (`os.Executable`), so tmux's `PATH` does
+  not matter; `ARGS` are added to each bound command.
   `--open` says where it opens:
   - `full` (the default): `display-popup -E -B -w 100% -h 100%`, a borderless
     popup covering the whole terminal, status line included. It looks like a
@@ -533,15 +540,18 @@ The temporary window closes itself when the program exits.
 - The configuration file is `--config`, or else the one tmux reads: the first
   that exists of `~/.tmux.conf`, `$XDG_CONFIG_HOME/tmux/tmux.conf`,
   `~/.config/tmux/tmux.conf`, else `~/.tmux.conf`, created if missing. The
-  binding goes in a block between `# >>> tmux-session-selector >>>` and
-  `# <<< tmux-session-selector <<<`, after one blank line, which also records
+  select binding goes in a block between `# >>> tmux-session-selector >>>` and
+  `# <<< tmux-session-selector <<<` (the overview's between
+  `# >>> tmux-session-selector overview >>>` and its `<<<` line), after one
+  blank line, which also records
   the key and what it was bound to before (`# previous:`, as `list-keys`
   prints it). Binding again replaces the block. The file is written in place,
   keeping its mode and following a symlink, as dotfiles often are.
 - If a tmux server is running, the binding is applied to it at once with
   `bind-key`; moving the binding to another key restores the old key's
   previous binding.
-- `--tmux-unbind [--config PATH]` removes the block, and the blank line before
+- `--tmux-unbind [--action both|select|overview] [--config PATH]` removes each
+  binding's block (both by default), and the blank line before
   it, and in a running server unbinds the key and re-runs the recorded
   previous binding, e.g. `bind-key -T prefix w choose-tree -Zw`.
 
@@ -564,9 +574,14 @@ tmux-session-selector [flags] [initial query]
   --sort ORDER    index (default), name or time; see §5
   --reverse       reverse the sort order
   --all-groups    show every session of a session group (tmux's -G)
-  --tmux-bind     bind the selector in tmux and exit; see §9.3
-  --tmux-unbind   remove that binding and exit
-  --key KEY       the key for --tmux-bind, after the prefix (default w)
+  --overview      open straight into the overview of the current session
+                  (§6.9); Esc or q then closes the selector
+  --tmux-bind     bind the selector and the overview in tmux and exit; §9.3
+  --tmux-unbind   remove those bindings and exit
+  --action WHICH  for --tmux-bind / --tmux-unbind: both (default), select or
+                  overview
+  --key KEY       the selector's key for --tmux-bind (default w)
+  --overview-key KEY  the overview's key for --tmux-bind (default O)
   --open MODE     for --tmux-bind: full (default), popup or window
   --config PATH   the tmux configuration file for --tmux-bind / --tmux-unbind
   --zoom          zoom the pane the selector runs in while it runs (tmux's
