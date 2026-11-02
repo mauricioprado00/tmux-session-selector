@@ -725,7 +725,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	if ov.search != nil {
 		foot = " type to search  Tab Shift-Tab ←↑↓→ next / previous match  ^W ^U delete a word / all  Esc Enter done"
 	}
-	drawLine(b, height-1, width, styleDim, false, span{text: foot})
+	drawLine(b, height-1, width, "", false, hintSpans(foot, m.togglesOn())...)
 	if cursor > 0 {
 		fmt.Fprintf(b, "\x1b[1;%dH\x1b[?25h", min(width, cursor))
 	}

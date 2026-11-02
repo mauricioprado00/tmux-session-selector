@@ -193,6 +193,10 @@ line shows the order, e.g. `(sort: time, reversed)`, as tmux's does.
   the lower half of the screen; see §6.4.
 - **Footer**: the bottom line always lists the main keys and `? help`, so every
   shortcut can be found without reading documentation.
+- **Toggles show their state**: the hint of a toggle that is on (`^R regex`,
+  `^V preview`, `^Z`/`z bg jobs`, `^L titles`; in the overview `d dirs`,
+  `o centre`, `^L titles`) is drawn bold green instead of dim, and in the help
+  its key is green with `on` after the meaning. Every new toggle does the same.
 - Long rows are truncated with `…`; the screen never wraps.
 - The UI redraws on terminal resize (`SIGWINCH`).
 
@@ -202,8 +206,9 @@ line shows the order, e.g. `(sort: time, reversed)`, as tmux's does.
 help panel, in colour (headings bold cyan, keys yellow, search examples green,
 the mode names in the prompt's `NORMAL` style): the query syntax (words, `!`, `s:`, `w:`, `c:`, `d:`, `/regex/`,
 smart case), every key binding and the mouse actions. When it does not fit,
-`Up`/`Down`, `PgUp`/`PgDn`, `Home`/`End` and the wheel scroll it, and its last
-row says so. Any other key closes it; keys other than `Esc`, `Enter` and `F1`
+`Up`/`Down`, `PgUp`/`PgDn`, `Home`/`End` and the wheel scroll it. While it is
+open the bottom row is the help's own, in place of the list's key hints: how to
+scroll it (and which lines show) and how to close it. Any other key closes it; keys other than `Esc`, `Enter` and `F1`
 also take effect, so typing goes straight into the query.
 `F1` alone is not enough because some terminals (GNOME Terminal) keep it for
 their own help. The same query syntax is printed by `--help`.
@@ -401,7 +406,7 @@ tmux", below), or every `--refresh` where that is not possible.
   next to the centre fills first.
 
 The top line names the session and the layout; the bottom line lists the
-keys. The window in focus has a bold yellow frame and a reversed `▶` label.
+keys, those of toggles that are on in bold green (§6.1). The window in focus has a bold yellow frame and a reversed `▶` label.
 
 | Key | Action |
 |---|---|

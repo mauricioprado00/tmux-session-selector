@@ -384,3 +384,31 @@ func TestJobsSetting(t *testing.T) {
 		t.Errorf("after a second Ctrl-Z: shown %v, saved %q", m.jobs, readState(path)["background-jobs"])
 	}
 }
+
+func TestTogglesShownOn(t *testing.T) {
+	on := "\x1b[0;" + styleOn + "m"
+	s := &tmux.Session{ID: "$1", Name: "work", Windows: windows(2)}
+	roots, total := buildTree([]*tmux.Session{s}, tmux.Location{}, "")
+	m := &model{roots: roots, total: total, stateFile: filepath.Join(t.TempDir(), "state"), screens: map[string]screen{}}
+	m.setQuery()
+	if out := m.render(200, 30); strings.Contains(out, on) {
+		t.Error("nothing is on: no hint should be in styleOn")
+	}
+	m.handle(event{key: keyToggleJobs})
+	m.titles = true
+	out := m.render(200, 30)
+	if !strings.Contains(out, on+"^Z bg jobs") || !strings.Contains(out, on+"^L titles") ||
+		strings.Contains(out, on+"^V preview") {
+		t.Errorf("footer with bg jobs and titles on: %q", out)
+	}
+	m.help = true
+	if out := m.render(200, 80); !strings.Contains(out, on+"Ctrl-Z") || strings.Contains(out, on+"Ctrl-V") {
+		t.Errorf("help with bg jobs on: %q", out)
+	}
+	m.help = false
+	m.dirs = true
+	m.openOverview()
+	if out := m.render(200, 30); !strings.Contains(out, on+"d dirs") || strings.Contains(out, on+"o centre") {
+		t.Errorf("overview footer with dirs on: %q", out)
+	}
+}

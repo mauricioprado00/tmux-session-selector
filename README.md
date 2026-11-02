@@ -89,8 +89,9 @@ Reload with `tmux source-file ~/.tmux.conf`.
 ## Use
 
 Type to filter. `Enter` jumps to the selected session, window or pane; `Esc`
-closes without changing anything. The bottom line lists the main keys; `?` opens a
-help panel.
+closes without changing anything. The bottom line lists the main keys, with
+those of toggles that are on (preview, background processes, titles…) in
+green; `?` opens a help panel, which marks them `on` too.
 
 The preview below the list draws the selected window's panes in their real
 layout and colours, or a session's windows side by side, like tmux's own

@@ -422,8 +422,11 @@ func TestHelpScrolls(t *testing.T) {
 	m.setQuery()
 	m.handle(typed('?'))
 	screen := m.render(80, 24)
-	if !strings.Contains(screen, "to scroll (lines 1–20 of") {
+	if !strings.Contains(screen, "to scroll (lines 1–21 of") {
 		t.Fatalf("a 24-line screen should show a scroll hint")
+	}
+	if strings.Contains(screen, "Enter jump") {
+		t.Errorf("the list's hints should not show under the help")
 	}
 	m.handle(event{key: keyDown})
 	m.handle(event{key: keyMouse, button: 65, press: true})
@@ -433,7 +436,7 @@ func TestHelpScrolls(t *testing.T) {
 	}
 	m.handle(event{key: keyEnd})
 	m.render(80, 24)
-	if m.helpTop != len(helpText)-20 {
+	if m.helpTop != len(helpText)-21 {
 		t.Errorf("End should scroll to the last page, helpTop %d", m.helpTop)
 	}
 	m.handle(typed('a'))

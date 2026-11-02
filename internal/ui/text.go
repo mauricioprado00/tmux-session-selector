@@ -26,7 +26,28 @@ const (
 	styleFile     = "33"       // the files an editor in a pane has open
 	styleStopped  = "1;33"     // a background process stopped with Ctrl-Z
 	styleRunning  = "32"       // a background process still running
+	// styleOn marks the hint of a toggle that is on, in the footer and
+	// the help, so the screen tells which toggles are on.
+	styleOn = "1;32"
 )
+
+// hintSpans turns a line of key hints, separated by two spaces, into
+// spans: dim, except the hints of toggles that are on, in styleOn. on is
+// keyed by hint, as the line spells it ("^V preview").
+func hintSpans(line string, on map[string]bool) []span {
+	var spans []span
+	for i, h := range strings.Split(line, "  ") {
+		if i > 0 {
+			spans = append(spans, span{text: "  ", style: styleDim})
+		}
+		style := styleDim
+		if on[strings.TrimSpace(h)] {
+			style = styleOn
+		}
+		spans = append(spans, span{text: h, style: style})
+	}
+	return spans
+}
 
 // span is a piece of a screen line. hl holds byte ranges of text to show as
 // matches.

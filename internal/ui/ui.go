@@ -1241,8 +1241,9 @@ func (m *model) render(width, height int) string {
 
 	m.drawPrompt(&b, width)
 	drawLine(&b, 1, width, styleDim, false, span{text: strings.Repeat("─", width)})
+	helpFoot := ""
 	if m.help {
-		m.drawHelp(&b, 2, width, m.treeH+previewH)
+		helpFoot = m.drawHelp(&b, 2, width, m.treeH+previewH)
 	}
 	for i := 0; !m.help && i < m.treeH; i++ {
 		idx := m.top + i
@@ -1274,7 +1275,12 @@ func (m *model) render(width, height int) string {
 	if m.normal {
 		foot = footerNormal
 	}
-	drawLine(&b, height-1, width, styleDim, false, span{text: foot})
+	if m.help {
+		// The help takes the keys: its own line replaces the list's hints.
+		drawLine(&b, height-1, width, styleDim, false, span{text: helpFoot})
+	} else {
+		drawLine(&b, height-1, width, "", false, hintSpans(foot, m.togglesOn())...)
+	}
 	if m.menu != nil {
 		m.menu.draw(&b, width, height)
 	}
@@ -1444,32 +1450,56 @@ func claudeTitle(p *tmux.Pane) string {
 	return title
 }
 
+// togglesOn is which toggles are on, by their hint in the footers (and
+// the overview's) and their key in the help, for hintSpans and drawHelp to
+// show them in styleOn. Every toggle with a hint or a help line belongs
+// here.
+func (m *model) togglesOn() map[string]bool {
+	regex := m.mode == filter.Regex
+	on := map[string]bool{
+		"^R regex": regex, "^V preview": m.preview, "^Z bg jobs": m.jobs, "z bg jobs": m.jobs,
+		"^L titles": m.titles, "d dirs": m.dirs,
+		// The help's keys.
+		"Ctrl-R": regex, "Ctrl-V": m.preview, "v": m.preview, "Ctrl-Z": m.jobs, "z": m.jobs,
+		"Ctrl-L": m.titles, "d": m.dirs,
+	}
+	if m.overview != nil {
+		on["o centre"] = m.overview.center != nil
+	}
+	return on
+}
+
 // footerSearch and footerNormal are the key hints on the bottom line.
 const (
 	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^O overview  ^R regex  ^V preview  ^Z bg jobs  ^L titles  Esc quit  ? help"
 	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  ^O overview  z bg jobs  ^L titles  / search  ? help  q quit"
 )
 
-// drawHelp draws the help in height rows from screen row y. When it does
-// not fit, it scrolls, and the last row says how.
-func (m *model) drawHelp(b *strings.Builder, y, width, height int) {
+// drawHelp draws the help in height rows from screen row y, scrolled when
+// it does not fit, and returns the line for the bottom row: how to scroll
+// it and close it.
+func (m *model) drawHelp(b *strings.Builder, y, width, height int) string {
+	on := m.togglesOn()
 	room := height
-	if len(helpText) > height {
-		room = height - 1
-	}
 	m.helpTop = max(0, min(m.helpTop, len(helpText)-room))
 	for i := 0; i < room; i++ {
 		var s []span
 		if m.helpTop+i < len(helpText) {
-			s = helpSpans(helpText[m.helpTop+i])
+			line := helpText[m.helpTop+i]
+			s = helpSpans(line)
+			// A toggle that is on: its key in styleOn, and "on" after it.
+			if key, _, _ := strings.Cut(strings.TrimPrefix(line, "| "), "\t"); strings.HasPrefix(line, "| ") && on[key] {
+				s[1].style = styleOn
+				s = append(s, span{text: "  on", style: styleOn})
+			}
 		}
 		drawLine(b, y+i, width, "", false, s...)
 	}
-	if room < height {
-		drawLine(b, y+room, width, styleDim, false, span{text: fmt.Sprintf(
-			"  ↑↓ PgUp PgDn or wheel to scroll (lines %d–%d of %d); any other key closes",
-			m.helpTop+1, m.helpTop+room, len(helpText))})
+	if len(helpText) <= room {
+		return " Esc closes the help; any other key closes it and does what it does"
 	}
+	return fmt.Sprintf(" ↑↓ PgUp PgDn or wheel to scroll (lines %d–%d of %d)  Esc closes; any other key closes and acts",
+		m.helpTop+1, m.helpTop+room, len(helpText))
 }
 
 // helpSpans styles a line of helpText, which marks its lines with a
