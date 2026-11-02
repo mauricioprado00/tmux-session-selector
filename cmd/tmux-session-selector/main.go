@@ -160,7 +160,7 @@ func run() int {
 	reverse := flag.Bool("reverse", false, "reverse the sort order")
 	zoom := flag.Bool("zoom", false, "zoom the pane the selector runs in while it runs (not in a popup)")
 	allGroups := flag.Bool("all-groups", false, "show every session of a session group, not just one")
-	refresh := flag.Duration("refresh", 250*time.Millisecond, "how often the preview updates; 0 for a single snapshot")
+	refresh := flag.Duration("refresh", 250*time.Millisecond, "how often the preview updates; the overview follows tmux as panes print instead, unless 0; 0 for a single snapshot")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	bind := flag.Bool("tmux-bind", false, "bind the selector to a key in tmux (see -key and -config)\nand exit; arguments after -- go into the bound command")
 	unbind := flag.Bool("tmux-unbind", false, "remove the binding -tmux-bind added, and exit")

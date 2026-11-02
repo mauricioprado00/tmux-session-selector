@@ -185,7 +185,8 @@ tmux-session-selector [flags] [initial query]
   -regex         start in regex mode
   -normal        start in normal mode (keys are commands, as in tmux's chooser)
   -no-preview    start with the preview hidden, whatever it was left at
-  -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot)
+  -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot);
+                 the overview follows panes as they print, unless 0
   -command CMD   run a tmux command on the chosen target instead of switching
                  (the first %% and every %1 become the target)
   -sort ORDER    index (default), name or time
@@ -226,6 +227,13 @@ grid it widens its row and column instead (a window has one size in the grid
 or ring and another in the centre, both remembered between runs),
 `Enter` switches to the window
 in focus, `Esc` or `q` goes back to the list.
+
+The overview keeps up with the panes as tmux itself does: it attaches a
+read-only tmux control-mode client to the session, which tmux tells the moment
+a pane prints or a window changes, and draws again within a frame (at most 30
+a second). Panes that are quiet cost nothing. While it is open, tmux lists the
+session as attached once more; the client does not count for window sizes and
+does not change the session's place when sorting by activity.
 
 `w` in the overview turns it into a **live window**: all the session's windows
 become panes of one tmux window, laid out the way the overview shows them,

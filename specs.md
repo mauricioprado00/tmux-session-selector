@@ -385,7 +385,8 @@ current window; there is no list behind it, so `Esc` and `q` close the
 selector. Otherwise, `Ctrl-O` (both modes, or Overview in the right-click
 menu) replaces the list with every window of the selected row's session at once, for watching
 them. Each window is drawn as in the preview (§6.4): its panes in their
-layout, in colour, and live, captured again every `--refresh`.
+layout, in colour, and live: captured again as soon as it prints ("Following
+tmux", below), or every `--refresh` where that is not possible.
 
 - From a **session row**, the windows share the screen evenly in rows; the
   number of columns is the one that shows the windows largest, and a shorter
@@ -469,6 +470,34 @@ Sizes are remembered between runs in the state file (§6.4), by window id, as
 `size.@3=N,M`: the normal and middle sizes in steps. Saving drops the sizes
 of windows that have closed, as tmux may give their ids to new windows.
 | `Esc`, `q` | back to the list |
+
+**Following tmux.** While the overview is open (and `--refresh` is not 0),
+a tmux control-mode client is attached to its session:
+`tmux -C attach-session -t $ID -f ignore-size,read-only`, read-only, and left
+out when tmux sizes windows. tmux sends it `%output %PANE …` whenever a pane
+prints, and `%layout-change`, `%window-add`, `%window-close`,
+`%window-renamed`, `%window-pane-changed`, `%session-window-changed` and
+`%pane-mode-changed` when windows change. A format subscription
+(`refresh-client -B`) on every pane's title, directory and command and its
+window's flags, which tmux checks once a second, covers the rest. The
+selector reads only the start of each line, merges what arrives between
+frames, and draws a frame at most every 1/30 s: panes that printed are
+captured again, in one tmux call, and on a window change the session is read
+again. Panes outside the overview, the selector's own included, are ignored.
+Nothing is captured while nothing prints, and the refresh tick is not used.
+
+Attaching has side effects that are undone or avoided:
+- tmux sets the session's activity time when a client attaches; an activity
+  time within two seconds of the attach is put back to what it was, so
+  sorting by activity does not move the session.
+- tmux takes "the current client" to be the one most recently active, which
+  could be the control-mode client. The calling client is named at start-up,
+  and the client is detached before switching, running a command template or
+  making a live window, and before the list is read again.
+- The session counts as attached while the overview is open.
+
+If the client cannot attach, or goes (tmux older than 3.2 has no `-f`), the
+overview of that session falls back to the refresh tick:
 
 On every refresh tick the session is read again, so windows opened or
 closed meanwhile appear or go and the layout adjusts; the focus and the
@@ -694,7 +723,8 @@ tmux-session-selector [flags] [initial query]
   --normal        start in normal mode (§6.8)
   --no-preview    start with the preview hidden, whatever it was left at
   --refresh DUR   how often the preview updates (default 250ms; 0 for a
-                  single snapshot)
+                  single snapshot); the overview follows tmux instead,
+                  unless 0
   --command CMD   run CMD on the chosen target instead of switching to it;
                   see §8.1
   --sort ORDER    index (default), name or time; see §5

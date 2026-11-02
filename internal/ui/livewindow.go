@@ -161,6 +161,7 @@ func (m *model) askLiveWindow() {
 // it was made from in liveOption, so the selector can split it back, and the
 // client switches to it.
 func (m *model) makeLiveWindow() (done bool, target *tmux.Target, err error) {
+	m.stopControl() // it switches the current client
 	m.refreshOverview()
 	ov := m.overview
 	if ov == nil || len(ov.session.Windows) < 2 {

@@ -126,6 +126,11 @@ type model struct {
 	menu *menu
 	// The overview, while open.
 	overview *overview
+	// live keeps the overview up to date through a control-mode client.
+	live controlState
+	// refreshEvery is Options.Refresh: how often the preview, and the overview
+	// without a control-mode client, are captured again; 0 never.
+	refreshEvery time.Duration
 	// Tagged rows, by target, so tags survive reloading the tree.
 	tags map[string]tmux.Target
 	// The last left click, to detect a double click.
@@ -166,7 +171,8 @@ func Run(o Options) (*tmux.Target, error) {
 	home, _ := os.UserHomeDir()
 	state := readState(o.StateFile)
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
-		template: o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
+		refreshEvery: o.Refresh,
+		template:     o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
 		titles: state["claude-titles"] != "off", sizes: readSizes(state),
 		dirs: state["overview-dirs"] == "on", proc: "/proc", claudeDir: os.Getenv("CLAUDE_CONFIG_DIR")}
 	if m.claudeDir == "" && home != "" {
@@ -181,6 +187,13 @@ func Run(o Options) (*tmux.Target, error) {
 		}
 	}
 	m.reverse = o.Reverse
+	if o.Inside && m.client == "" {
+		// Name the calling client now: once the overview attaches a
+		// control-mode client, "the current client" could mean that one.
+		if here, err := m.tmux.Current(""); err == nil {
+			m.client = here.Client
+		}
+	}
 	tty := terminalName()
 	if o.Inside && tty != "" {
 		m.self, _, _ = m.tmux.PaneByTTY(tty)
@@ -233,8 +246,23 @@ func Run(o Options) (*tmux.Target, error) {
 		tick = ticker.C
 	}
 
+	defer m.stopControl()
+	// A frame is drawn after every key, and frameGap after panes print in
+	// the overview.
+	var frame <-chan time.Time
+	var drawn time.Time
+	redraw := true
 	for {
-		t.f.WriteString(m.render(t.size()))
+		m.syncControl()
+		if redraw {
+			t.f.WriteString(m.render(t.size()))
+			drawn = time.Now()
+		}
+		redraw = true
+		var news <-chan struct{}
+		if m.live.ctl != nil {
+			news = m.live.ctl.News
+		}
 		select {
 		case evs, ok := <-keys:
 			if !ok {
@@ -247,7 +275,9 @@ func Run(o Options) (*tmux.Target, error) {
 			}
 		case <-winch:
 		case <-tick:
-			if m.overview == nil && (!m.preview || m.help) {
+			// The overview with a control-mode client is drawn on news.
+			if m.overview == nil && (!m.preview || m.help) || m.overview != nil && m.live.ctl != nil {
+				redraw = false
 				continue
 			}
 			if m.overview != nil {
@@ -255,6 +285,14 @@ func Run(o Options) (*tmux.Target, error) {
 			}
 			m.screens = map[string]screen{}
 			m.editorFiles = nil
+		case <-news:
+			redraw = false
+			if m.takeNews() && frame == nil {
+				frame = time.After(max(0, frameGap-time.Since(drawn)))
+			}
+		case <-frame:
+			frame = nil
+			m.applyNews()
 		case <-quit:
 			return nil, nil
 		}
@@ -380,6 +418,7 @@ func (m *model) load() error {
 	if err != nil {
 		return err
 	}
+	m.fixActivity(sessions)
 	var here tmux.Location
 	if m.inside {
 		if here, err = m.tmux.Current(m.client); err != nil {
@@ -978,6 +1017,7 @@ func (m *model) runEach(template string, targets []tmux.Target) (done bool, targ
 	if strings.TrimSpace(template) == "" {
 		return false, nil, nil
 	}
+	m.stopControl()
 	for _, t := range targets {
 		if err := m.tmux.RunTemplate(template, t); err != nil {
 			m.status = err.Error()
@@ -1060,6 +1100,7 @@ func (m *model) kill(targets []tmux.Target) (done bool, target *tmux.Target, err
 // is one, else switches the client to t, or outside tmux returns t for the
 // caller to attach to. On failure the error is shown and the list reloaded.
 func (m *model) jump(t tmux.Target) (done bool, target *tmux.Target, err error) {
+	m.stopControl()
 	var failed error
 	switch {
 	case m.template != "":

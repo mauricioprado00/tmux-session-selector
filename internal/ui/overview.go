@@ -192,6 +192,7 @@ func (m *model) leaveOverview() (done bool, target *tmux.Target, err error) {
 func (m *model) closeOverview() {
 	changed := m.overview.changed
 	m.overview = nil
+	m.stopControl() // before reading the list: it counts as attached
 	if changed {
 		m.reload()
 	}
@@ -207,6 +208,7 @@ func (m *model) refreshOverview() {
 	if err != nil {
 		return
 	}
+	m.fixActivity(sessions)
 	sessions, _ = withoutPane(sessions, m.self, tmux.Location{})
 	var s *tmux.Session
 	for _, x := range sessions {
