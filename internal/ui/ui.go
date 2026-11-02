@@ -1239,7 +1239,13 @@ func (m *model) render(width, height int) string {
 	}
 	m.top = max(0, min(m.top, len(m.rows)-m.treeH))
 
-	m.drawPrompt(&b, width)
+	if m.help {
+		// The help is not searched: its own title, and no query or cursor.
+		drawLine(&b, 0, width, "", false, span{text: " HELP ", style: styleNormal},
+			span{text: "  keys, search syntax and mouse", style: styleDim})
+	} else {
+		m.drawPrompt(&b, width)
+	}
 	drawLine(&b, 1, width, styleDim, false, span{text: strings.Repeat("─", width)})
 	helpFoot := ""
 	if m.help {
@@ -1285,7 +1291,7 @@ func (m *model) render(width, height int) string {
 		m.menu.draw(&b, width, height)
 	}
 	// Normal mode takes no text, so it shows no cursor.
-	if !m.normal || m.input != nil {
+	if !m.help && (!m.normal || m.input != nil) {
 		fmt.Fprintf(&b, "\x1b[1;%dH\x1b[?25h", m.drawPromptCursor(width))
 	}
 	return b.String()

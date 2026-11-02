@@ -428,6 +428,9 @@ func TestHelpScrolls(t *testing.T) {
 	if strings.Contains(screen, "Enter jump") {
 		t.Errorf("the list's hints should not show under the help")
 	}
+	if !strings.Contains(screen, " HELP ") || strings.Contains(screen, "sort:") || strings.Contains(screen, "\x1b[?25h") {
+		t.Errorf("the help's top line should be its title, without the query, its status or a cursor")
+	}
 	m.handle(event{key: keyDown})
 	m.handle(event{key: keyMouse, button: 65, press: true})
 	m.render(80, 24)

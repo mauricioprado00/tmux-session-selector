@@ -207,7 +207,8 @@ help panel, in colour (headings bold cyan, keys yellow, search examples green,
 the mode names in the prompt's `NORMAL` style): the query syntax (words, `!`, `s:`, `w:`, `c:`, `d:`, `/regex/`,
 smart case), every key binding and the mouse actions. When it does not fit,
 `Up`/`Down`, `PgUp`/`PgDn`, `Home`/`End` and the wheel scroll it. While it is
-open the bottom row is the help's own, in place of the list's key hints: how to
+open the top row is its title (`HELP`), without the query, its status or a
+cursor, and the bottom row is the help's own, in place of the list's key hints: how to
 scroll it (and which lines show) and how to close it. Any other key closes it; keys other than `Esc`, `Enter` and `F1`
 also take effect, so typing goes straight into the query.
 `F1` alone is not enough because some terminals (GNOME Terminal) keep it for
