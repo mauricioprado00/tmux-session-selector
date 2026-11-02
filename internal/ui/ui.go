@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/filter"
 	"github.com/mauricioprado00/tmux-session-selector/internal/jobs"
+	"github.com/mauricioprado00/tmux-session-selector/internal/procinfo"
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
 
@@ -88,9 +90,15 @@ type model struct {
 	sizes windowSizes
 	// dirs shows each pane's working directory in the overview; d switches
 	// it, and it is remembered.
-	dirs    bool
-	help    bool
-	helpTop int // first help line shown, when the help is scrolled
+	dirs bool
+	// claudeDir is Claude Code's directory, for the titles of stopped
+	// Claude Code jobs, and proc is /proc, for the files of editors; ""
+	// turns either off.
+	claudeDir, proc string
+	// editorFiles caches what editorFilesOf found, until the next refresh.
+	editorFiles map[string]string
+	help        bool
+	helpTop     int // first help line shown, when the help is scrolled
 	// normal is normal mode, where keys are commands as in tmux's chooser;
 	// otherwise typing edits the search. Ctrl-/ switches.
 	normal bool
@@ -160,7 +168,10 @@ func Run(o Options) (*tmux.Target, error) {
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
 		template: o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
 		titles: state["claude-titles"] != "off", sizes: readSizes(state),
-		dirs: state["overview-dirs"] == "on"}
+		dirs: state["overview-dirs"] == "on", proc: "/proc", claudeDir: os.Getenv("CLAUDE_CONFIG_DIR")}
+	if m.claudeDir == "" && home != "" {
+		m.claudeDir = filepath.Join(home, ".claude")
+	}
 	if o.Regex {
 		m.mode = filter.Regex
 	}
@@ -243,6 +254,7 @@ func Run(o Options) (*tmux.Target, error) {
 				m.refreshOverview()
 			}
 			m.screens = map[string]screen{}
+			m.editorFiles = nil
 		case <-quit:
 			return nil, nil
 		}
@@ -379,12 +391,62 @@ func (m *model) load() error {
 		sessions = squashGroups(sessions, here.Session)
 	}
 	m.roots, m.total = buildTree(sessions, here, m.home)
+	m.editorFiles = nil
+	// An editor's files are searchable, as a pane's title is.
+	walkTree(m.roots, func(n *node) {
+		if n.kind != jobRow && n.pane != nil {
+			if files := m.editorFilesOf(n.pane); files != "" {
+				n.fields = append(n.fields, filter.Field{Kind: filter.Title, Value: files})
+			}
+		}
+	})
 	if m.jobs {
 		m.addJobs()
 	}
 	sortTree(m.roots, m.order, m.reverse)
 	m.screens = map[string]screen{}
 	return nil
+}
+
+// editorFilesOf is the files the editor running in p has open, or "" if p
+// is not running one; see procinfo.EditorFiles. It reads two small files of
+// /proc, only for panes whose command is an editor, and remembers the
+// answer until the next refresh.
+func (m *model) editorFilesOf(p *tmux.Pane) string {
+	if m.proc == "" || !procinfo.IsEditor(p.Command) {
+		return ""
+	}
+	key := p.ID + " " + strconv.Itoa(p.PID) + " " + p.Command
+	if files, ok := m.editorFiles[key]; ok {
+		return files
+	}
+	if m.editorFiles == nil {
+		m.editorFiles = map[string]string{}
+	}
+	files := clean(procinfo.EditorFiles(m.proc, p.PID))
+	m.editorFiles[key] = files
+	return files
+}
+
+// paneTitle is what Ctrl-L shows for pane p, and in which style: the
+// session title of Claude Code, or the files of an editor, or "".
+func (m *model) paneTitle(p *tmux.Pane) (string, string) {
+	if t := claudeTitle(p); t != "" {
+		return t, styleTitle
+	}
+	return m.editorFilesOf(p), styleFile
+}
+
+// isClaude is whether a command line runs Claude Code: its program, or the
+// script node runs, is named claude.
+func isClaude(args string) bool {
+	f := strings.Fields(args)
+	for i := 0; i < len(f) && i < 2; i++ {
+		if filepath.Base(f[i]) == "claude" {
+			return true
+		}
+	}
+	return false
 }
 
 // addJobs adds the background processes of every pane to the tree.
@@ -395,7 +457,15 @@ func (m *model) addJobs() {
 		m.status = "could not list processes: " + err.Error()
 		return
 	}
-	m.jobCount = attachJobs(m.roots, found)
+	m.jobCount = attachJobs(m.roots, found, func(j *jobs.Job) string {
+		if !isClaude(j.Args) {
+			return ""
+		}
+		if t := procinfo.ClaudeTitle(m.claudeDir, j.PID); t != "" {
+			return "✳ " + t
+		}
+		return ""
+	})
 	m.total += m.jobCount
 }
 
@@ -1275,9 +1345,13 @@ func (m *model) rowContent(n *node) []span {
 		if n.job.Stopped {
 			state = span{text: "  stopped", style: styleStopped}
 		}
-		return []span{marker, {text: strings.Repeat(" ", 2*n.level()) + arrow},
+		s := []span{marker, {text: strings.Repeat(" ", 2*n.level()) + arrow},
 			{text: strconv.Itoa(n.job.PID) + " ", style: styleDim},
-			{text: n.command, hl: hl(filter.Command, n.command)}, state}
+			{text: n.command, hl: hl(filter.Command, n.command)}}
+		if m.titles && n.title != "" {
+			s = append(s, span{text: "  "}, span{text: n.title, style: styleTitle, hl: hl(filter.Title, n.title)})
+		}
+		return append(s, state)
 	default:
 		pad := strings.Repeat(" ", n.cmdWidth-textWidth(n.command))
 		id := n.pane.ID
@@ -1293,14 +1367,17 @@ func (m *model) rowContent(n *node) []span {
 	}
 }
 
-// titleSpans shows the session title of a pane running Claude Code, then a
-// gap, or nothing for other panes.
+// titleSpans shows what a pane is working on (see paneTitle), then a gap,
+// or nothing.
 func (m *model) titleSpans(p *tmux.Pane) []span {
-	title := claudeTitle(p)
-	if title == "" || !m.titles {
+	if !m.titles {
 		return nil
 	}
-	return []span{{text: title, style: styleTitle, hl: m.matcher.Highlight(filter.Title, title)}, {text: "  "}}
+	title, style := m.paneTitle(p)
+	if title == "" {
+		return nil
+	}
+	return []span{{text: title, style: style, hl: m.matcher.Highlight(filter.Title, title)}, {text: "  "}}
 }
 
 // claudeTitle is the session title Claude Code keeps in its pane's title,

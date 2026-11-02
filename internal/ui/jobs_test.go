@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/filter"
 	"github.com/mauricioprado00/tmux-session-selector/internal/jobs"
+	"github.com/mauricioprado00/tmux-session-selector/internal/procinfo"
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
 
@@ -42,7 +44,7 @@ func TestJobRows(t *testing.T) {
 	}
 	m := &model{roots: roots, total: 7}
 	m.setQuery()
-	m.jobCount = attachJobs(roots, found)
+	m.jobCount = attachJobs(roots, found, nil)
 	m.total += m.jobCount
 	m.refresh()
 	if m.jobCount != 3 {
@@ -107,7 +109,7 @@ func jobNames(rows []row) []string {
 
 func TestJobRowContent(t *testing.T) {
 	roots, found := jobsTree()
-	attachJobs(roots, found)
+	attachJobs(roots, found, nil)
 	m := &model{roots: roots}
 	m.setQuery()
 	text := func(n *node) string {
@@ -214,7 +216,7 @@ func TestClaudeTitlesInOverview(t *testing.T) {
 	c := newCanvas(82, 26)
 	label := " 1: ai "
 	c.text(2, 0, 80, label, styleLabel)
-	drawClaudeTitles(c, w, 0, 0, 81, 25, 2+textWidth(label))
+	(&model{}).drawPaneTitles(c, w, 0, 0, 81, 25, 2+textWidth(label))
 	row := func(y int) string {
 		var b strings.Builder
 		for _, cl := range c.cells[y] {
@@ -273,5 +275,96 @@ func TestToggleTitles(t *testing.T) {
 	m.overview = nil
 	if l, o := shows(); !l || !o || readState(path)["claude-titles"] != "on" {
 		t.Errorf("after Ctrl-L in the overview: list %v, overview %v, saved %q", l, o, readState(path)["claude-titles"])
+	}
+}
+
+func TestStoppedClaudeJobTitle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "sessions", "201.json"), `{"pid":201,"sessionId":"s1","cwd":"/src"}`)
+	writeFile(t, filepath.Join(dir, "projects", "-src", "s1.jsonl"),
+		`{"type":"ai-title","aiTitle":"Fix the login form","sessionId":"s1"}`+"\n")
+	roots, _ := jobsTree()
+	m := &model{roots: roots, titles: true, claudeDir: dir}
+	m.setQuery()
+	found := map[int][]*jobs.Job{20: {{PID: 201, Stopped: true, Args: "claude --resume s1"}, {PID: 202, Args: "make"}}}
+	attachJobs(roots, found, func(j *jobs.Job) string {
+		if isClaude(j.Args) {
+			return "✳ " + procinfo.ClaudeTitle(m.claudeDir, j.PID)
+		}
+		return ""
+	})
+	pane := roots[0].children[0].children[1]
+	text := func(n *node) string {
+		var b strings.Builder
+		for _, s := range m.rowContent(n) {
+			b.WriteString(s.text)
+		}
+		return b.String()
+	}
+	if got := text(pane.children[0]); !strings.HasSuffix(got, "claude --resume s1  ✳ Fix the login form  stopped") {
+		t.Errorf("claude job row = %q", got)
+	}
+	if got := text(pane.children[1]); strings.Contains(got, "✳") {
+		t.Errorf("make has no title: %q", got)
+	}
+	m.titles = false
+	if got := text(pane.children[0]); strings.Contains(got, "Fix the login") {
+		t.Errorf("Ctrl-L off should hide the job's title: %q", got)
+	}
+	// The title is searchable.
+	mt, _ := filter.New("login", filter.Words)
+	if rows, n := visible(roots, mt); n != 1 || rows[len(rows)-1].n != pane.children[0] {
+		t.Errorf("search for the title found %d rows", n)
+	}
+}
+
+func TestEditorFilesShown(t *testing.T) {
+	proc := t.TempDir()
+	writeFile(t, filepath.Join(proc, "10", "stat"), "10 (bash) S 1 10 10 34817 30 0")
+	writeFile(t, filepath.Join(proc, "30", "cmdline"), "vim\x00notes.md\x00")
+	ws := windows(2)
+	ws[0].Panes[0].Command, ws[0].Panes[0].PID = "vim", 10
+	s := &tmux.Session{ID: "$1", Name: "work", Windows: ws}
+	fake := &model{proc: proc}
+	if got, style := fake.paneTitle(ws[0].Panes[0]); got != "notes.md" || style != styleFile {
+		t.Fatalf("paneTitle = %q %q", got, style)
+	}
+	roots, total := buildTree([]*tmux.Session{s}, tmux.Location{}, "")
+	m := &model{roots: roots, total: total, proc: proc, titles: true, screens: map[string]screen{}}
+	m.setQuery()
+	row := func() string {
+		var b strings.Builder
+		for _, sp := range m.rowContent(roots[0].children[0]) {
+			b.WriteString(sp.text)
+		}
+		return b.String()
+	}
+	if !strings.Contains(row(), "vim  notes.md  ") {
+		t.Errorf("list row = %q", row())
+	}
+	m.handle(event{key: keyOverview})
+	if !strings.Contains(m.render(120, 40), " notes.md ") {
+		t.Error("the overview should show the file on the pane's border")
+	}
+	m.handle(event{key: keyToggleTitles})
+	if strings.Contains(m.render(120, 40), "notes.md") || strings.Contains(row(), "notes.md") {
+		t.Error("Ctrl-L should hide the file in both")
+	}
+	// The overview's search finds it.
+	for _, r := range "/notes" {
+		m.handle(event{key: keyRune, r: r})
+	}
+	if m.matchCount() != 1 {
+		t.Errorf("search for the file matched %d windows", m.matchCount())
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

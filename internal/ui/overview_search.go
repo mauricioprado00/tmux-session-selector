@@ -47,6 +47,7 @@ func (m *model) paneFields(s *tmux.Session, w *tmux.Window, p *tmux.Pane) []filt
 		{Kind: filter.Command, Value: clean(p.Command)},
 		{Kind: filter.Path, Value: clean(tilde(p.Path, m.home))},
 		{Kind: filter.Title, Value: clean(p.Title)},
+		{Kind: filter.Title, Value: m.editorFilesOf(p)},
 	}
 }
 

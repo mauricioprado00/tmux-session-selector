@@ -23,6 +23,7 @@ const (
 	styleKey      = "33"
 	styleExample  = "32"
 	styleTitle    = "38;5;173" // a Claude Code session title, in Claude's orange
+	styleFile     = "33"       // the files an editor in a pane has open
 	styleStopped  = "1;33"     // a background process stopped with Ctrl-Z
 	styleRunning  = "32"       // a background process still running
 )

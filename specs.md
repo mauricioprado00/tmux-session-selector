@@ -98,6 +98,30 @@ for panes along the window's top. `Ctrl-L` hides or shows the titles in the
 list and the overview alike, from either, and is remembered as
 `claude-titles=on|off` in the state file (§6.4); they start shown.
 
+The same switch shows, for a pane whose command is an editor (`vim`, `vi`,
+`nvim`, `view`, `vimdiff`, `nano`, `pico`, `micro`, `hx`, `helix`, `emacs`,
+`kak`, `joe`, `ne`, `mcedit`), the files it was started on, in the list after
+the command and in the overview on the pane's border, in yellow. They are
+read from `/proc` (Linux only): the foreground process group of the pane's
+first process, from `/proc/PID/stat`, and that process's
+`/proc/PID/cmdline`, whose arguments other than options, their values and
+`+line` positions are the files. That is two small reads per editor pane,
+and none for other panes, done once per tree read and per preview refresh.
+The files are searchable, as a title is, in the list and in the overview.
+
+A background Claude Code process (§5, background processes) has no pane
+title of its own, so its session title is read from Claude Code's files:
+`~/.claude/sessions/PID.json` (or under `$CLAUDE_CONFIG_DIR`) names the
+session and its directory, and the session's transcript,
+`~/.claude/projects/DIR/SESSION.jsonl` (the directory with each character
+other than a letter or digit made `-`), records each title as an `ai-title`
+line, or a `custom-title` line for one the user gave. The latest is near
+the end, so the transcript is read backwards from its end, 64 KB first and
+more only if no title is there; a name in the session file that the user
+gave wins. This is done only for background processes named `claude`, when
+they are shown. The title follows the command on the job's row, and
+`Ctrl-L` hides it with the others.
+
 #### Background processes
 
 `Ctrl-Z` (normal mode: `z`) shows, under each pane's row, that pane's

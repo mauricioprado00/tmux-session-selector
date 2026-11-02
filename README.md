@@ -123,7 +123,10 @@ A pane running Claude Code shows its session title, such as
 `✳ Fix the login form`, which Claude Code keeps in the pane's title; it comes
 with the rest of the list, so it costs nothing, and the search finds it.
 The overview shows it too, on the pane's top border. `Ctrl-L` hides or shows
-these titles in both the list and the overview, and is remembered.
+these titles in both the list and the overview, and is remembered. With
+them, a pane running an editor (vim, nvim, nano, emacs, helix, micro…) shows
+the files it was opened on, and a Claude Code job stopped with `Ctrl-Z` still
+shows its session title among the background processes.
 
 `Ctrl-Z` shows each pane's background processes under it, as a tree: jobs
 stopped with `Ctrl-Z`, or sent to the background with `bg` or `&`, marked

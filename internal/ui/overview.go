@@ -706,7 +706,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		}
 		c.text(box.x0+2, box.y0, box.x1-1, label, style)
 		if m.titles {
-			drawClaudeTitles(c, w, box.x0, box.y0, box.x1, box.y1, box.x0+2+textWidth(label))
+			m.drawPaneTitles(c, w, box.x0, box.y0, box.x1, box.y1, box.x0+2+textWidth(label))
 		}
 	}
 	// Screen rows of the boxes, for the mouse.
@@ -747,16 +747,16 @@ func (c *canvas) restyleBox(x0, y0, x1, y1 int, style string) {
 	}
 }
 
-// drawClaudeTitles writes the session title of each pane of w running
-// Claude Code on the top border of its pane, in the window's box
-// (x0, y0)–(x1, y1). Panes along the box's top share that border with the
-// window's label, which ends at column after, so their titles go after it.
-func drawClaudeTitles(c *canvas, w *tmux.Window, x0, y0, x1, y1, after int) {
+// drawPaneTitles writes what each pane of w is working on (see paneTitle)
+// on the top border of its pane, in the window's box (x0, y0)–(x1, y1).
+// Panes along the box's top share that border with the window's label,
+// which ends at column after, so their titles go after it.
+func (m *model) drawPaneTitles(c *canvas, w *tmux.Window, x0, y0, x1, y1, after int) {
 	rects := paneRects(w, x0, y0, x1, y1)
 	// Left to right, which pane indexes need not follow.
 	sort.Slice(rects, func(i, j int) bool { return rects[i].x0 < rects[j].x0 })
 	for _, r := range rects {
-		title := claudeTitle(r.p)
+		title, style := m.paneTitle(r.p)
 		if title == "" {
 			continue
 		}
@@ -765,7 +765,7 @@ func drawClaudeTitles(c *canvas, w *tmux.Window, x0, y0, x1, y1, after int) {
 			x = max(x, after+1)
 		}
 		text := " " + title + " "
-		c.text(x, r.y0, r.x1-1, text, styleTitle)
+		c.text(x, r.y0, r.x1-1, text, style)
 		if r.y0 == y0 && x < r.x1-1 {
 			after = min(x+textWidth(text), r.x1-1)
 		}

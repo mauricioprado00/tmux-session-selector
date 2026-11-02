@@ -28,6 +28,7 @@ type node struct {
 	window   *tmux.Window
 	pane     *tmux.Pane // the pane row's pane, or the only pane of a window; a job row's pane
 	job      *jobs.Job  // job rows
+	title    string     // job rows: the Claude Code session title, if it is one
 	name     string     // session or window name, cleaned for display
 	command  string
 	path     string
@@ -137,8 +138,9 @@ func panePIDs(roots []*node) []int {
 
 // attachJobs adds rows for the background processes in found, keyed by
 // shell pid, under the row of their pane, and expands the rows above them
-// so they show. It returns how many rows it added.
-func attachJobs(roots []*node, found map[int][]*jobs.Job) int {
+// so they show. title, if not nil, gives a job's title, such as a stopped
+// Claude Code's session title. It returns how many rows it added.
+func attachJobs(roots []*node, found map[int][]*jobs.Job, title func(*jobs.Job) string) int {
 	added := 0
 	var attach func(parent *node, js []*jobs.Job)
 	attach = func(parent *node, js []*jobs.Job) {
@@ -146,8 +148,12 @@ func attachJobs(roots []*node, found map[int][]*jobs.Job) int {
 			args := clean(j.Args)
 			jn := &node{kind: jobRow, session: parent.session, window: parent.window, pane: parent.pane,
 				job: j, command: args, parent: parent, expanded: true}
+			if title != nil {
+				jn.title = clean(title(j))
+			}
 			jn.fields = []filter.Field{{Kind: filter.Session, Value: clean(parent.session.Name)},
-				{Kind: filter.Window, Value: clean(parent.window.Name)}, {Kind: filter.Command, Value: args}}
+				{Kind: filter.Window, Value: clean(parent.window.Name)}, {Kind: filter.Command, Value: args},
+				{Kind: filter.Title, Value: jn.title}}
 			parent.children = append(parent.children, jn)
 			added++
 			attach(jn, j.Children)
