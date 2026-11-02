@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/filter"
+	"github.com/mauricioprado00/tmux-session-selector/internal/jobs"
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
 
@@ -15,6 +16,8 @@ const (
 	sessionRow kind = iota
 	windowRow
 	paneRow
+	// jobRow is a background process of a pane (see attachJobs).
+	jobRow
 )
 
 // node is one row of the tree. A window with a single pane has no pane row;
@@ -23,7 +26,8 @@ type node struct {
 	kind     kind
 	session  *tmux.Session
 	window   *tmux.Window
-	pane     *tmux.Pane // the pane row's pane, or the only pane of a window
+	pane     *tmux.Pane // the pane row's pane, or the only pane of a window; a job row's pane
+	job      *jobs.Job  // job rows
 	name     string     // session or window name, cleaned for display
 	command  string
 	path     string
@@ -104,7 +108,84 @@ func (n *node) describe() string {
 	case windowRow:
 		return "window " + strconv.Itoa(n.window.Index) + ": " + n.name
 	}
+	if n.kind == jobRow {
+		return "process " + strconv.Itoa(n.job.PID) + " (" + n.command + ")"
+	}
 	return "pane " + n.pane.ID + " (" + n.command + ")"
+}
+
+// level is how deep n is in the tree: 0 for a session.
+func (n *node) level() int {
+	l := 0
+	for p := n.parent; p != nil; p = p.parent {
+		l++
+	}
+	return l
+}
+
+// panePIDs lists the pid of every pane's first process, its shell, for
+// jobs.List.
+func panePIDs(roots []*node) []int {
+	var pids []int
+	walkTree(roots, func(n *node) {
+		if n.kind != jobRow && n.pane != nil && n.pane.PID > 0 {
+			pids = append(pids, n.pane.PID)
+		}
+	})
+	return pids
+}
+
+// attachJobs adds rows for the background processes in found, keyed by
+// shell pid, under the row of their pane, and expands the rows above them
+// so they show. It returns how many rows it added.
+func attachJobs(roots []*node, found map[int][]*jobs.Job) int {
+	added := 0
+	var attach func(parent *node, js []*jobs.Job)
+	attach = func(parent *node, js []*jobs.Job) {
+		for _, j := range js {
+			args := clean(j.Args)
+			jn := &node{kind: jobRow, session: parent.session, window: parent.window, pane: parent.pane,
+				job: j, command: args, parent: parent, expanded: true}
+			jn.fields = []filter.Field{{Kind: filter.Session, Value: clean(parent.session.Name)},
+				{Kind: filter.Window, Value: clean(parent.window.Name)}, {Kind: filter.Command, Value: args}}
+			parent.children = append(parent.children, jn)
+			added++
+			attach(jn, j.Children)
+		}
+	}
+	walkTree(roots, func(n *node) {
+		if n.kind == jobRow || n.pane == nil {
+			return
+		}
+		if js := found[n.pane.PID]; len(js) > 0 {
+			attach(n, js)
+			for p := n; p != nil; p = p.parent {
+				p.expanded = true
+			}
+		}
+	})
+	return added
+}
+
+// detachJobs removes the rows attachJobs added.
+func detachJobs(roots []*node) {
+	walkTree(roots, func(n *node) {
+		kept := n.children[:0]
+		for _, c := range n.children {
+			if c.kind != jobRow {
+				kept = append(kept, c)
+			}
+		}
+		n.children = kept
+	})
+}
+
+// walkTree calls f on every node, parents before their children.
+func walkTree(nodes []*node, f func(*node)) {
+	for _, n := range nodes {
+		f(n)
+		walkTree(n.children, f)
+	}
 }
 
 // squashGroups keeps one session of each session group, as tmux's chooser
@@ -135,6 +216,8 @@ var SortOrders = []string{"index", "name", "time"}
 func sortTree(roots []*node, order int, reverse bool) {
 	less := func(a, b *node) bool {
 		switch {
+		case a.kind == jobRow:
+			return a.job.PID < b.job.PID
 		case a.kind == paneRow:
 			return a.pane.Index < b.pane.Index
 		case SortOrders[order] == "name":
@@ -175,7 +258,7 @@ func (n *node) target() tmux.Target {
 	if n.window != nil {
 		t.Window = n.window.ID
 	}
-	if n.kind == paneRow {
+	if n.kind == paneRow || n.kind == jobRow {
 		t.Pane = n.pane.ID
 	}
 	return t

@@ -13,13 +13,15 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/filter"
+	"github.com/mauricioprado00/tmux-session-selector/internal/jobs"
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
 )
 
 // minPreviewHeight is the terminal height from which the preview is shown by
-// default.
+// default, until it has been toggled once (see StateFile).
 const minPreviewHeight = 30
 
 type Options struct {
@@ -29,6 +31,9 @@ type Options struct {
 	Query     string
 	Regex     bool
 	NoPreview bool
+	// StateFile remembers settings between runs, such as whether the
+	// preview was last shown; "" remembers nothing. See DefaultStateFile.
+	StateFile string
 	// Refresh is how often the preview is captured again; 0 keeps the
 	// first capture of each pane for the whole run.
 	Refresh time.Duration
@@ -70,8 +75,16 @@ type model struct {
 	top      int
 	treeH    int
 	preview  bool
-	help     bool
-	helpTop  int // first help line shown, when the help is scrolled
+	// jobs shows the background processes of each pane (Ctrl-Z); jobCount
+	// is how many rows that added.
+	jobs      bool
+	jobCount  int
+	stateFile string
+	// titles shows Claude Code session titles, in the list and the
+	// overview; Ctrl-L switches it, and it is remembered.
+	titles  bool
+	help    bool
+	helpTop int // first help line shown, when the help is scrolled
 	// normal is normal mode, where keys are commands as in tmux's chooser;
 	// otherwise typing edits the search. Ctrl-/ switches.
 	normal bool
@@ -137,8 +150,10 @@ type hit struct {
 // and nil error means the user cancelled.
 func Run(o Options) (*tmux.Target, error) {
 	home, _ := os.UserHomeDir()
+	state := readState(o.StateFile)
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
-		template: o.Command, allGroups: o.AllGroups, normal: o.Normal}
+		template: o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
+		titles: state["claude-titles"] != "off"}
 	if o.Regex {
 		m.mode = filter.Regex
 	}
@@ -175,7 +190,7 @@ func Run(o Options) (*tmux.Target, error) {
 	}
 	defer t.restore()
 	_, h := t.size()
-	m.preview = !o.NoPreview && h >= minPreviewHeight
+	m.preview = initialPreview(o.NoPreview, state["preview"], h)
 
 	keys := make(chan []event)
 	go func() {
@@ -225,6 +240,19 @@ func Run(o Options) (*tmux.Target, error) {
 			return nil, nil
 		}
 	}
+}
+
+// initialPreview is whether the preview starts shown: never with
+// -no-preview, else as it was left last time (saved, "on" or "off"), else
+// when the terminal is tall enough.
+func initialPreview(noPreview bool, saved string, height int) bool {
+	switch {
+	case noPreview:
+		return false
+	case saved == "on" || saved == "off":
+		return saved == "on"
+	}
+	return height >= minPreviewHeight
 }
 
 // splitStartWindow splits the window the selector was started from back into
@@ -344,9 +372,51 @@ func (m *model) load() error {
 		sessions = squashGroups(sessions, here.Session)
 	}
 	m.roots, m.total = buildTree(sessions, here, m.home)
+	if m.jobs {
+		m.addJobs()
+	}
 	sortTree(m.roots, m.order, m.reverse)
 	m.screens = map[string]screen{}
 	return nil
+}
+
+// addJobs adds the background processes of every pane to the tree.
+func (m *model) addJobs() {
+	m.jobCount = 0
+	found, err := jobs.List(panePIDs(m.roots))
+	if err != nil {
+		m.status = "could not list processes: " + err.Error()
+		return
+	}
+	m.jobCount = attachJobs(m.roots, found)
+	m.total += m.jobCount
+}
+
+// toggleJobs shows or hides the background processes of the panes, without
+// reading the tree again, so what is expanded stays expanded.
+func (m *model) toggleJobs() {
+	m.jobs = !m.jobs
+	if m.jobs {
+		m.addJobs()
+		sortTree(m.roots, m.order, m.reverse)
+		if m.jobCount == 0 && m.status == "" {
+			m.status = "no background processes in any pane"
+		}
+	} else {
+		detachJobs(m.roots)
+		m.total -= m.jobCount
+		m.jobCount = 0
+	}
+	m.refresh()
+}
+
+// toggleTitles shows or hides Claude Code session titles, everywhere, and
+// remembers that for the next run.
+func (m *model) toggleTitles() {
+	m.titles = !m.titles
+	if err := saveSetting(m.stateFile, "claude-titles", onOff(m.titles)); err != nil {
+		m.status = "could not remember the titles setting: " + err.Error()
+	}
 }
 
 // setQuery parses the query and refreshes the rows. An invalid regex keeps
@@ -548,7 +618,7 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		m.setQuery()
 	case keyTagAll:
 		for _, r := range m.rows {
-			if !r.context {
+			if !r.context && r.n.kind != jobRow {
 				m.tag(r.n, true)
 			}
 		}
@@ -593,6 +663,13 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		m.setQuery()
 	case keyTogglePreview:
 		m.preview = !m.preview
+		if err := saveSetting(m.stateFile, "preview", onOff(m.preview)); err != nil {
+			m.status = "could not remember the preview setting: " + err.Error()
+		}
+	case keyToggleJobs:
+		m.toggleJobs()
+	case keyToggleTitles:
+		m.toggleTitles()
 	case keyHelp:
 		m.help, m.helpTop = true, 0
 	case keyOverview:
@@ -615,7 +692,8 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 // include vim's motions.
 func (m *model) normalKey(r rune) (done bool, target *tmux.Target, err error) {
 	keys := map[rune]key{'j': keyDown, 'k': keyUp, 'l': keyExpand, '+': keyExpand,
-		'h': keyCollapse, '-': keyCollapse, 'g': keyHome, 'G': keyEnd, 'v': keyTogglePreview, '?': keyHelp}
+		'h': keyCollapse, '-': keyCollapse, 'g': keyHome, 'G': keyEnd, 'v': keyTogglePreview, '?': keyHelp,
+		'z': keyToggleJobs}
 	if k, ok := keys[r]; ok {
 		return m.handle(event{key: k})
 	}
@@ -692,6 +770,14 @@ func (m *model) shortcutLabel(i int) string {
 func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 	if r >= '0' && r <= '9' {
 		return m.shortcut(int(r - '0'))
+	}
+	// A background process is not a tmux target: killing, tagging or
+	// running a command on its row would hit its whole pane.
+	if n := m.selected(); n != nil && n.kind == jobRow {
+		if strings.ContainsRune("xt:;", r) || r == 'X' && len(m.tags) == 0 {
+			m.status = "that is a background process: bring it back with fg in its pane"
+			return false, nil, nil
+		}
 	}
 	switch r {
 	case 'o', 'O':
@@ -997,12 +1083,10 @@ func flagSpans(flags string) []span {
 // row (see rowSpans).
 const gutterWidth = 5
 
-// arrowColumn is the screen column of a row's expand arrow (see rowContent).
+// arrowColumn is the screen column of a row's expand arrow (see rowContent):
+// after the current-row marker, two columns of indent per level.
 func arrowColumn(n *node) int {
-	if n.kind == sessionRow {
-		return gutterWidth + 1
-	}
-	return gutterWidth + 3
+	return gutterWidth + 1 + 2*n.level()
 }
 
 // render draws the whole screen: prompt, tree and, if on, the preview.
@@ -1089,6 +1173,9 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 	if len(m.tags) > 0 {
 		status = fmt.Sprintf("%d tagged  ", len(m.tags)) + status
 	}
+	if m.jobs {
+		status = fmt.Sprintf("%d background  ", m.jobCount) + status
+	}
 	right := span{text: status, style: styleDim}
 	switch {
 	case m.status != "":
@@ -1171,9 +1258,19 @@ func (m *model) rowContent(n *node) []span {
 			s = append(s, span{text: fmt.Sprintf("  (%d panes)", len(n.window.Panes)), style: styleDim})
 		} else {
 			s = append(s, span{text: "  "}, span{text: n.command, hl: hl(filter.Command, n.command)},
-				span{text: "  "}, span{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)})
+				span{text: "  "})
+			s = append(s, m.titleSpans(n.pane)...)
+			s = append(s, span{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)})
 		}
 		return s
+	case jobRow:
+		state := span{text: "  running", style: styleRunning}
+		if n.job.Stopped {
+			state = span{text: "  stopped", style: styleStopped}
+		}
+		return []span{marker, {text: strings.Repeat(" ", 2*n.level()) + arrow},
+			{text: strconv.Itoa(n.job.PID) + " ", style: styleDim},
+			{text: n.command, hl: hl(filter.Command, n.command)}, state}
 	default:
 		pad := strings.Repeat(" ", n.cmdWidth-textWidth(n.command))
 		id := n.pane.ID
@@ -1182,16 +1279,46 @@ func (m *model) rowContent(n *node) []span {
 		} else {
 			id += " "
 		}
-		return []span{marker, {text: "      " + id + " "},
-			{text: n.command, hl: hl(filter.Command, n.command)}, {text: pad + "  "},
-			{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)}}
+		s := []span{marker, {text: "    " + arrow + id + " "},
+			{text: n.command, hl: hl(filter.Command, n.command)}, {text: pad + "  "}}
+		s = append(s, m.titleSpans(n.pane)...)
+		return append(s, span{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)})
 	}
+}
+
+// titleSpans shows the session title of a pane running Claude Code, then a
+// gap, or nothing for other panes.
+func (m *model) titleSpans(p *tmux.Pane) []span {
+	title := claudeTitle(p)
+	if title == "" || !m.titles {
+		return nil
+	}
+	return []span{{text: title, style: styleTitle, hl: m.matcher.Highlight(filter.Title, title)}, {text: "  "}}
+}
+
+// claudeTitle is the session title Claude Code keeps in its pane's title,
+// such as "✳ Fix the login form", or "" for a pane not running it. It costs
+// nothing: pane_title comes with the rest of the tree in one tmux call.
+// Claude Code starts its title with ✳, or a braille spinner while it works.
+// A shell in the foreground means Claude Code has exited and left its last
+// title behind.
+func claudeTitle(p *tmux.Pane) string {
+	title := clean(p.Title)
+	r, size := utf8.DecodeRuneInString(title)
+	if !(r == '✳' || r >= 0x2800 && r <= 0x28ff) || len(title) <= size || title[size] != ' ' {
+		return ""
+	}
+	switch strings.TrimPrefix(p.Command, "-") {
+	case "bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh":
+		return ""
+	}
+	return title
 }
 
 // footerSearch and footerNormal are the key hints on the bottom line.
 const (
-	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^O overview  ^R regex  ^V preview  Esc quit  ? help"
-	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  ^O overview  / search  ? help  q quit"
+	footerSearch = " Enter jump  ↑↓ move  →← fold  ^/ normal mode  ^O overview  ^R regex  ^V preview  ^Z bg jobs  ^L titles  Esc quit  ? help"
+	footerNormal = " Enter jump  j/k move  h/l fold  t tag  x kill  : command  ^O overview  z bg jobs  ^L titles  / search  ? help  q quit"
 )
 
 // drawHelp draws the help in height rows from screen row y. When it does
@@ -1281,7 +1408,11 @@ var helpText = []string{
 	"| Right Left  Tab\texpand / collapse",
 	"| Ctrl-T\ttag every match",
 	"| Ctrl-R\tswitch between words and regex",
-	"| Ctrl-V\tshow or hide the preview",
+	"| Ctrl-V\tshow or hide the preview (remembered for next time)",
+	"| Ctrl-Z\tshow or hide each pane's background processes: jobs",
+	"|\tstopped with Ctrl-Z, or sent to the background with bg or &",
+	"| Ctrl-L\tshow or hide Claude Code session titles, here and in",
+	"|\tthe overview (remembered for next time)",
 	"| Ctrl-O\toverview of the selected session (see below)",
 	"| F1\tthis help",
 	"| Esc\tclose (this help, then the selector)",
@@ -1312,6 +1443,7 @@ var helpText = []string{
 	"| H\tback to the pane the selector started from",
 	"| n N\tnext / previous row matching the search",
 	"| v\tshow or hide the preview",
+	"| z\tshow or hide background processes (as Ctrl-Z)",
 	"| < >\tscroll a session preview",
 	"| / f\tback to search mode",
 	"| q\tquit",
@@ -1327,6 +1459,7 @@ var helpText = []string{
 	"| Enter  double-click\tswitch to the window in focus",
 	"| click  wheel\tfocus a window / the next or previous one",
 	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",
+	"| Ctrl-L\tshow or hide Claude Code session titles",
 	"| w\tjoin the windows into one live window laid out like this,",
 	"|\tsplit back into them the next time the selector opens there",
 	"| Esc  q\tback to the list",

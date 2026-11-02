@@ -22,6 +22,9 @@ const (
 	styleHeading  = "1;36"
 	styleKey      = "33"
 	styleExample  = "32"
+	styleTitle    = "38;5;173" // a Claude Code session title, in Claude's orange
+	styleStopped  = "1;33"     // a background process stopped with Ctrl-Z
+	styleRunning  = "32"       // a background process still running
 )
 
 // span is a piece of a screen line. hl holds byte ranges of text to show as

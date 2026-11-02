@@ -119,6 +119,18 @@ dimmed does not match itself; it is there because something inside it does.
 Windows show tmux's flags after their name: `*` current, `-` last, `#`
 activity, `!` bell (in red), `~` silence, `M` marked pane, `Z` zoomed.
 
+A pane running Claude Code shows its session title, such as
+`✳ Fix the login form`, which Claude Code keeps in the pane's title; it comes
+with the rest of the list, so it costs nothing, and the search finds it.
+The overview shows it too, on the pane's top border. `Ctrl-L` hides or shows
+these titles in both the list and the overview, and is remembered.
+
+`Ctrl-Z` shows each pane's background processes under it, as a tree: jobs
+stopped with `Ctrl-Z`, or sent to the background with `bg` or `&`, marked
+`stopped` or `running`. `Enter` on one jumps to its pane (then `fg` brings it
+back); the search finds them by command. They are read with one `ps` call
+when shown, so they cost nothing while hidden.
+
 | Key | Action |
 |---|---|
 | `Up` / `Down`, `Ctrl-P` / `Ctrl-N`, `Ctrl-K` / `Ctrl-J` | move |
@@ -126,7 +138,9 @@ activity, `!` bell (in red), `~` silence, `M` marked pane, `Z` zoomed.
 | `Right` / `Tab`, `Left` / `Shift-Tab` | expand, collapse |
 | `Backspace`, `Ctrl-W`, `Ctrl-U` | delete a character, a word, everything |
 | `Ctrl-R` | switch between words and regex mode |
-| `Ctrl-V` | show or hide the pane preview |
+| `Ctrl-V` | show or hide the pane preview; remembered for next time |
+| `Ctrl-Z` | show or hide the panes' background processes (`z` in normal mode) |
+| `Ctrl-L` | show or hide Claude Code session titles, here and in the overview; remembered |
 | `Ctrl-/` | switch between search and normal mode |
 | `Ctrl-O` | overview: every window of the session at once, live |
 | `?` (empty query), `F1` | help panel with the query syntax and keys |
@@ -167,7 +181,7 @@ tmux-session-selector [flags] [initial query]
   -client NAME   tmux client to switch (default: the calling client)
   -regex         start in regex mode
   -normal        start in normal mode (keys are commands, as in tmux's chooser)
-  -no-preview    start with the preview hidden
+  -no-preview    start with the preview hidden, whatever it was left at
   -refresh DUR   how often the preview updates (default 250ms; 0 for a snapshot)
   -command CMD   run a tmux command on the chosen target instead of switching
                  (the first %% and every %1 become the target)

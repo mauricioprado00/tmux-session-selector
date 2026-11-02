@@ -58,7 +58,7 @@ backslash as `\\`, so the parser decodes those escapes while splitting. A raw
 |---|---|
 | Session | `session_id`, `session_name`, `session_attached`, `session_activity` |
 | Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag`, `window_raw_flags`, `window_activity` |
-| Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y`, `pane_marked` |
+| Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y`, `pane_marked`, `pane_pid` |
 
 The geometry and cursor fields are only used to draw the preview (§6.4).
 
@@ -87,6 +87,37 @@ this: `session_group`, `session_group_list`.
 
 Rows are grouped into a tree: session → window → pane. Windows with a single
 pane do not show a pane row; the window row stands for that pane.
+
+A pane running Claude Code shows its session title after its command. Claude
+Code keeps the title in the pane's title (`pane_title`), starting with `✳`, or
+a braille spinner character while it works, so it needs no extra call. A
+title like that is shown unless a shell is in the pane's foreground, which
+means Claude Code has exited and left its last title behind. The overview
+(§6.9) writes the title on the pane's top border, after the window's label
+for panes along the window's top. `Ctrl-L` hides or shows the titles in the
+list and the overview alike, from either, and is remembered as
+`claude-titles=on|off` in the state file (§6.4); they start shown.
+
+#### Background processes
+
+`Ctrl-Z` (normal mode: `z`) shows, under each pane's row, that pane's
+background processes: jobs stopped with `Ctrl-Z`, or sent to the background
+with `bg` or `&`. They are read with a single
+`ps -A -ww -o pid=,ppid=,pgid=,tpgid=,stat=,args=` when shown, and again when
+the tree is reloaded, never while hidden. A process is one when it descends
+from the pane's first process (`pane_pid`, its shell), has a controlling
+terminal (`tpgid` > 0), and is neither in the terminal's foreground process
+group nor in the shell's own group. Each is put under its nearest background
+ancestor, so a job shows as the tree of its processes. Rows read
+`PID command  stopped` (`stat` starting with `T`) or `… running`; the rows
+above them are expanded so they show, and the prompt line counts them
+(`3 background`). The search matches them by command (`c:`), with session and
+window names as for panes.
+
+`Enter` or a click on one jumps to its pane, and the preview shows the pane.
+They are not tmux targets: kill, tag and command on them do nothing but say
+so, and `Ctrl-T` does not tag them, so none of these can hit the whole pane
+by mistake.
 
 The tree is sorted as tmux's chooser sorts it (`-O` / `-r` there):
 
@@ -157,6 +188,9 @@ their own help. The same query syntax is printed by `--help`.
 - Query empty, all sessions expanded to window level, the current window
   selected.
 - Mode `words`.
+- Preview shown as it was left last time (§6.4), or, if it has never been
+  toggled, when the terminal is at least 30 rows high. `--no-preview` starts
+  it hidden without changing what is remembered. Background processes hidden.
 
 ### 6.4 Preview
 
@@ -189,6 +223,12 @@ Modelled on tmux's own `choose-tree` preview:
   captured while the preview is hidden or help is open. `--refresh 0` keeps
   the first capture of each pane for the whole run. Pane layout is read once
   at start-up; only content and cursor are live.
+- **Remembered**: `Ctrl-V` saves whether the preview is shown, as
+  `preview=on` or `preview=off` in `$XDG_STATE_HOME/tmux-session-selector/state`
+  (`~/.local/state/…` when `XDG_STATE_HOME` is unset), and the next run starts
+  that way (§6.3). The file holds `name=value` lines and is replaced whole,
+  through a temporary file and a rename. If it cannot be written, the prompt
+  line says so and the toggle still works for this run.
 
 ### 6.5 Key bindings
 
@@ -205,7 +245,9 @@ Modelled on tmux's own `choose-tree` preview:
 | `Right` / `Tab` | expand the selected row |
 | `Left` / `Shift-Tab` | collapse the selected row (or move to its parent) |
 | `Ctrl-R` | toggle between `words` and `regex` mode |
-| `Ctrl-V` | toggle the preview |
+| `Ctrl-V` | toggle the preview, and remember it for the next run |
+| `Ctrl-Z` | show or hide the panes' background processes (§5) |
+| `Ctrl-L` | show or hide Claude Code session titles, here and in the overview (§5) |
 | `Ctrl-/` | switch between search and normal mode (§6.8) |
 | `Ctrl-O` | open the overview of the selected row's session (§6.9) |
 | `Ctrl-B` / `Ctrl-F`, `Ctrl-D` | page up / down, half a page down |
@@ -299,6 +341,7 @@ same byte as `Ctrl-_`).
 | `H` | back to the starting pane |
 | `n` / `N` | next / previous row matching the query, wrapping around |
 | `v` | show or hide the preview |
+| `z` | show or hide background processes |
 | `<` / `>` | scroll a session preview |
 | `?` | help |
 | `/` or `f` | back to search mode (tmux's `f` is its filter) |
@@ -342,6 +385,7 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 | `Enter`, double-click | switch to the window in focus, as choosing it in the list does (`--command` applies) |
 | click / wheel | focus a window / the next or previous one |
 | `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |
+| `Ctrl-L` | show or hide Claude Code session titles, as in the list |
 | `Esc`, `q` | back to the list |
 
 On every refresh tick the session is read again, so windows opened or
@@ -566,7 +610,7 @@ tmux-session-selector [flags] [initial query]
   --client NAME   tmux client to switch (default: the calling client)
   --regex         start in regex mode
   --normal        start in normal mode (§6.8)
-  --no-preview    start with the preview hidden
+  --no-preview    start with the preview hidden, whatever it was left at
   --refresh DUR   how often the preview updates (default 250ms; 0 for a
                   single snapshot)
   --command CMD   run CMD on the chosen target instead of switching to it;

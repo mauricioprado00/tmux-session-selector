@@ -336,7 +336,7 @@ type screen struct {
 // previewPanes lists the panes the preview of n shows in width columns.
 func (m *model) previewPanes(n *node, width int) []*tmux.Pane {
 	switch n.kind {
-	case paneRow:
+	case paneRow, jobRow:
 		return []*tmux.Pane{n.pane}
 	case windowRow:
 		return layoutPanes(n.window)
@@ -444,7 +444,7 @@ func (m *model) drawPreview(b *strings.Builder, y, width, height int) {
 		case failed != nil:
 			c.box(0, 0, width-1, height-1, styleBorder)
 			c.text(2, 1, width-1, "preview unavailable: "+clean(failed.Error()), styleError)
-		case n.kind == paneRow:
+		case n.kind == paneRow || n.kind == jobRow:
 			m.drawPane(c, n.pane, 0, 0, width-1, height-1)
 			m.addHit(0, 0, width-1, height-1, n.target())
 		case n.kind == windowRow:
@@ -473,13 +473,42 @@ func (m *model) addHit(x0, y0, x1, y1 int, t tmux.Target) {
 // paneDetail, each pane gets its id and command on its top border and is
 // clickable.
 func (m *model) drawWindow(c *canvas, sessionID string, w *tmux.Window, x0, y0, x1, y1 int, activeStyle string, paneDetail bool) {
+	rects := paneRects(w, x0, y0, x1, y1)
+	for _, r := range rects {
+		c.blit(r.x0+1, r.y0+1, r.x1-r.x0-1, r.y1-r.y0-1, m.screens[r.p.ID].cells, r.p.CursorX, r.p.CursorY)
+	}
+	for _, r := range rects {
+		c.box(r.x0, r.y0, r.x1, r.y1, styleBorder)
+	}
+	for _, r := range rects {
+		if r.p.Active && activeStyle != "" && len(rects) > 1 {
+			c.box(r.x0, r.y0, r.x1, r.y1, activeStyle)
+		}
+	}
+	if paneDetail {
+		for _, r := range rects {
+			m.addHit(r.x0, r.y0, r.x1, r.y1, tmux.Target{Session: sessionID, Window: w.ID, Pane: r.p.ID})
+			style := styleLabel
+			if r.p.Active {
+				style = styleActiveLabel
+			}
+			c.text(r.x0+2, r.y0, r.x1-1, " "+r.p.ID+" "+clean(r.p.Command)+" ", style)
+		}
+	}
+}
+
+// paneRect is where a pane is drawn: its box, borders included.
+type paneRect struct {
+	p              *tmux.Pane
+	x0, y0, x1, y1 int
+}
+
+// paneRects places the panes a window shows in its layout, scaled into the
+// box (x0, y0)–(x1, y1).
+func paneRects(w *tmux.Window, x0, y0, x1, y1 int) []paneRect {
 	innerW, innerH := x1-x0-1, y1-y0-1
 	if innerW < 1 || innerH < 1 {
-		return
-	}
-	type rect struct {
-		p              *tmux.Pane
-		x0, y0, x1, y1 int
+		return nil
 	}
 	// Window columns 0..Width-1 map into the box; -1 and Width are its edges,
 	// so a pane's borders are the columns just outside it.
@@ -502,35 +531,15 @@ func (m *model) drawWindow(c *canvas, sessionID string, w *tmux.Window, x0, y0, 
 		}
 		return y0 + 1 + y*innerH/wh
 	}
-	var rects []rect
+	var rects []paneRect
 	for _, p := range layoutPanes(w) {
 		left, top, width, height := p.Left, p.Top, p.Width, p.Height
 		if w.Zoomed {
 			left, top, width, height = 0, 0, ww, wh
 		}
-		rects = append(rects, rect{p, sx(left - 1), sy(top - 1), sx(left + width), sy(top + height)})
+		rects = append(rects, paneRect{p, sx(left - 1), sy(top - 1), sx(left + width), sy(top + height)})
 	}
-	for _, r := range rects {
-		c.blit(r.x0+1, r.y0+1, r.x1-r.x0-1, r.y1-r.y0-1, m.screens[r.p.ID].cells, r.p.CursorX, r.p.CursorY)
-	}
-	for _, r := range rects {
-		c.box(r.x0, r.y0, r.x1, r.y1, styleBorder)
-	}
-	for _, r := range rects {
-		if r.p.Active && activeStyle != "" && len(rects) > 1 {
-			c.box(r.x0, r.y0, r.x1, r.y1, activeStyle)
-		}
-	}
-	if paneDetail {
-		for _, r := range rects {
-			m.addHit(r.x0, r.y0, r.x1, r.y1, tmux.Target{Session: sessionID, Window: w.ID, Pane: r.p.ID})
-			style := styleLabel
-			if r.p.Active {
-				style = styleActiveLabel
-			}
-			c.text(r.x0+2, r.y0, r.x1-1, " "+r.p.ID+" "+clean(r.p.Command)+" ", style)
-		}
-	}
+	return rects
 }
 
 // drawSession draws a session's windows side by side, as many as fit, with

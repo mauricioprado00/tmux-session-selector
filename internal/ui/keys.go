@@ -34,6 +34,8 @@ const (
 	keyOverview
 	keyTab
 	keyBackTab
+	keyToggleJobs
+	keyToggleTitles
 )
 
 type event struct {
@@ -65,6 +67,8 @@ var ctrlKeys = map[byte]key{
 	0x06: keyPageDown,      // Ctrl-F
 	0x04: keyHalfDown,      // Ctrl-D
 	0x0f: keyOverview,      // Ctrl-O
+	0x1a: keyToggleJobs,    // Ctrl-Z, the key that stops a job
+	0x0c: keyToggleTitles,  // Ctrl-L, for labels
 	0x03: keyCancel,        // Ctrl-C
 	0x07: keyCancel,        // Ctrl-G
 }

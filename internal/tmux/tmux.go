@@ -27,6 +27,7 @@ type Pane struct {
 	Path    string
 	Title   string
 	Marked  bool // the marked pane (select-pane -m)
+	PID     int  // the pane's first process, normally its shell
 	// Position and size within the window, and cursor position within the pane.
 	Left, Top, Width, Height int
 	CursorX, CursorY         int
@@ -163,7 +164,7 @@ var paneFields = []string{
 	"pane_left", "pane_top", "pane_width", "pane_height", "cursor_x", "cursor_y",
 	"window_width", "window_height", "window_zoomed_flag",
 	"window_raw_flags", "pane_marked", "session_activity", "window_activity",
-	"session_group", "session_group_list", "window_layout",
+	"session_group", "session_group_list", "window_layout", "pane_pid",
 }
 
 var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
@@ -215,6 +216,7 @@ func ParsePanes(out string) ([]*Session, error) {
 			Command: f[10], Path: f[11], Title: f[12],
 			Left: atoi(f[13]), Top: atoi(f[14]), Width: atoi(f[15]), Height: atoi(f[16]),
 			CursorX: atoi(f[17]), CursorY: atoi(f[18]), Marked: f[23] == "1",
+			PID: atoi(f[29]),
 		})
 	}
 	for _, s := range sessions {

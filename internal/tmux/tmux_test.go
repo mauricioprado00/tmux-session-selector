@@ -34,7 +34,7 @@ func TestSplitFields(t *testing.T) {
 
 func TestParsePanes(t *testing.T) {
 	line := func(f ...string) string { return strings.Join(f, `\037`) }
-	geometry := line("0", "0", "80", "24", "1", "2", "80", "24", "0", "*Z", "0", "1700000000", "1700000001", "", "", "abcd,80x24,0,0,1")
+	geometry := line("0", "0", "80", "24", "1", "2", "80", "24", "0", "*Z", "0", "1700000000", "1700000001", "", "", "abcd,80x24,0,0,1", "4242")
 	out := strings.Join([]string{
 		line("$1", "api", "1", "@2", "2", "server", "0", "%5", "0", "1", "go", "/srv", "host", geometry),
 		line("$1", "api", "1", "@1", "1", "editor", "1", "%3", "1", "1", "nvim", "/srv", "host", geometry),
@@ -58,6 +58,9 @@ func TestParsePanes(t *testing.T) {
 	}
 	if api.Activity != 1700000000 || editor.Activity != 1700000001 {
 		t.Errorf("activity = %d, %d", api.Activity, editor.Activity)
+	}
+	if editor.Panes[0].PID != 4242 {
+		t.Errorf("pane pid = %d", editor.Panes[0].PID)
 	}
 	if editor.Flags != "*Z" {
 		t.Errorf("flags = %q", editor.Flags)
