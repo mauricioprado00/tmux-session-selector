@@ -450,11 +450,10 @@ func overviewLayout(windows []*tmux.Window, center, w, h int, sizes windowSizes)
 
 // centredLayout puts windows[center] in the middle of a k×k grid of cells,
 // taking its middle half each way, and the other windows in the ring of
-// cells around it. Sizes scale the grid's columns and rows: the centre's
-// middle size scales its columns and rows, and every other column or row
-// takes the largest normal size of the windows in it. So a window in a
-// corner grows both ways, one beside or above the centre only away from it,
-// and the grid stays a grid, which a live window can be cut into.
+// cells around it, the layer next to the centre first, each layer clockwise
+// from its top left corner. A grown window takes more ring cells while there
+// are empty ones (see packCells); the rest of its size, and the centre's
+// middle size, scale the grid's columns and rows (see trackWeights).
 func centredLayout(windows []*tmux.Window, center, w, h int, sizes windowSizes) []cellBox {
 	n := len(windows)
 	k := overviewRing
@@ -463,27 +462,28 @@ func centredLayout(windows []*tmux.Window, center, w, h int, sizes windowSizes) 
 	}
 	lo, hi := k/4, 3*k/4-1 // the centre's first and last cell each way
 
-	// The ring's cells: the layer next to the centre first, each layer
-	// clockwise from its top left corner.
 	type cell struct {
-		i, j  int
+		c, r  int
 		layer int
 		angle float64
 	}
 	var ring []cell
+	free := make([][]bool, k)
 	mid := float64(k) / 2
-	for j := 0; j < k; j++ {
-		for i := 0; i < k; i++ {
-			layer := max(lo-i, i-hi, lo-j, j-hi)
+	for r := 0; r < k; r++ {
+		free[r] = make([]bool, k)
+		for c := 0; c < k; c++ {
+			layer := max(lo-c, c-hi, lo-r, r-hi)
 			if layer <= 0 {
 				continue // the centre
 			}
-			dx, dy := float64(i)+0.5-mid, float64(j)+0.5-mid
+			free[r][c] = true
+			dx, dy := float64(c)+0.5-mid, float64(r)+0.5-mid
 			angle := math.Atan2(dy, dx) + 3*math.Pi/4 // the top left corner first
 			if angle < 0 {
 				angle += 2 * math.Pi
 			}
-			ring = append(ring, cell{i, j, layer, angle})
+			ring = append(ring, cell{c, r, layer, angle})
 		}
 	}
 	sort.SliceStable(ring, func(a, b int) bool {
@@ -492,53 +492,43 @@ func centredLayout(windows []*tmux.Window, center, w, h int, sizes windowSizes) 
 		}
 		return ring[a].angle < ring[b].angle
 	})
-
-	at := make([]cell, n)
-	colW, rowH := make([]float64, k), make([]float64, k)
-	next := 0
-	for i, win := range windows {
-		if i == center {
-			continue
-		}
-		c := ring[next]
-		next++
-		at[i] = c
-		size := sizes.of(win, false)
-		colW[c.i], rowH[c.j] = max(colW[c.i], size), max(rowH[c.j], size)
+	order := make([][2]int, len(ring))
+	for i, c := range ring {
+		order[i] = [2]int{c.c, c.r}
 	}
-	middle := sizes.of(windows[center], true)
-	for x := 0; x < k; x++ {
-		switch {
-		case x >= lo && x <= hi:
-			colW[x], rowH[x] = middle, middle
-		default:
-			// An empty column or row keeps the size of one.
-			if colW[x] == 0 {
-				colW[x] = 1
-			}
-			if rowH[x] == 0 {
-				rowH[x] = 1
-			}
+
+	var others []*tmux.Window
+	for i, win := range windows {
+		if i != center {
+			others = append(others, win)
 		}
+	}
+	rects, factors := packWindows(others, free, order, float64(w)/float64(k), float64(h)/float64(k), sizes)
+	colW, rowH := trackWeights(rects, factors, k, k, nil)
+	middle := sizes.of(windows[center], true)
+	for x := lo; x <= hi; x++ {
+		colW[x], rowH[x] = middle, middle
 	}
 	xs, ys := cuts(w, colW), cuts(h, rowH)
 	boxes := make([]cellBox, n)
+	boxes[center] = cellBox{xs[lo], ys[lo], xs[hi+1] - 1, ys[hi+1] - 1}
+	j := 0
 	for i := range windows {
-		if i == center {
-			boxes[i] = cellBox{xs[lo], ys[lo], xs[hi+1] - 1, ys[hi+1] - 1}
-		} else {
-			c := at[i]
-			boxes[i] = cellBox{xs[c.i], ys[c.j], xs[c.i+1] - 1, ys[c.j+1] - 1}
+		if i != center {
+			r := rects[j]
+			boxes[i] = cellBox{xs[r.c0], ys[r.r0], xs[r.c1+1] - 1, ys[r.r1+1] - 1}
+			j++
 		}
 	}
 	return boxes
 }
 
-// evenLayout shares a w×h area among windows in rows, choosing the number
-// of columns that shows the windows largest; a last, shorter row is spread
-// across the full width. Within a row, windows get widths in proportion to
-// their normal sizes; each row gets a height in proportion to the largest
-// size in it.
+// evenLayout shares a w×h area among windows in a grid, choosing the number
+// of columns that shows the windows largest, and filling it row by row. A
+// grown window takes more cells while the grid has empty ones (see
+// packCells); the rest of its size scales the grid's columns and rows (see
+// trackWeights). A row left with empty cells, whose windows are all within
+// it, spreads them across the full width instead.
 func evenLayout(windows []*tmux.Window, w, h int, sizes windowSizes) []cellBox {
 	n := len(windows)
 	ww, wh := 80, 24
@@ -554,21 +544,61 @@ func evenLayout(windows []*tmux.Window, w, h int, sizes windowSizes) []cellBox {
 		}
 	}
 	rows := (n + cols - 1) / cols
-	rowH := make([]float64, rows)
-	for i, win := range windows {
-		rowH[i/cols] = max(rowH[i/cols], sizes.of(win, false))
+	free := make([][]bool, rows)
+	var order [][2]int
+	for r := range free {
+		free[r] = make([]bool, cols)
+		for c := range free[r] {
+			free[r][c] = true
+			order = append(order, [2]int{c, r})
+		}
 	}
-	ys := cuts(h, rowH)
+	rects, factors := packWindows(windows, free, order, float64(w)/float64(cols), float64(h)/float64(rows), sizes)
+
+	// Rows to spread: those with empty cells and no window reaching into
+	// another row.
+	used := make([]int, rows)
+	spread := make([]bool, rows)
+	for r := range spread {
+		spread[r] = true
+	}
+	for _, rc := range rects {
+		for r := rc.r0; r <= rc.r1; r++ {
+			used[r] += rc.cols()
+			if rc.r0 != rc.r1 {
+				spread[r] = false
+			}
+		}
+	}
+	for r := range spread {
+		spread[r] = spread[r] && used[r] < cols
+	}
+	colW, rowH := trackWeights(rects, factors, cols, rows, spread)
+	xs, ys := cuts(w, colW), cuts(h, rowH)
 	boxes := make([]cellBox, n)
 	for r := 0; r < rows; r++ {
-		inRow := windows[r*cols : min(n, (r+1)*cols)]
-		widths := make([]float64, len(inRow))
-		for c, win := range inRow {
-			widths[c] = sizes.of(win, false)
+		if !spread[r] {
+			continue
 		}
-		xs := cuts(w, widths)
-		for c := range inRow {
-			boxes[r*cols+c] = cellBox{xs[c], ys[r], xs[c+1] - 1, ys[r+1] - 1}
+		var in []int
+		for i, rc := range rects {
+			if rc.r0 == r {
+				in = append(in, i)
+			}
+		}
+		sort.SliceStable(in, func(a, b int) bool { return rects[in[a]].c0 < rects[in[b]].c0 })
+		widths := make([]float64, len(in))
+		for j, i := range in {
+			widths[j] = float64(rects[i].cols()) * factors[i]
+		}
+		rowXs := cuts(w, widths)
+		for j, i := range in {
+			boxes[i] = cellBox{rowXs[j], ys[r], rowXs[j+1] - 1, ys[r+1] - 1}
+		}
+	}
+	for i, rc := range rects {
+		if !spread[rc.r0] {
+			boxes[i] = cellBox{xs[rc.c0], ys[rc.r0], xs[rc.c1+1] - 1, ys[rc.r1+1] - 1}
 		}
 	}
 	return boxes

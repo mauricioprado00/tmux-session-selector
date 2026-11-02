@@ -43,16 +43,47 @@ func TestWindowSizes(t *testing.T) {
 }
 
 func TestSizedEvenLayout(t *testing.T) {
-	ws := windows(4) // 2×2 on 120×40
-	sizes := windowSizes{"@0": {normal: 4}}
-	boxes := evenLayout(ws, 120, 40, sizes)
-	w0, w1 := boxes[0].x1-boxes[0].x0+1, boxes[1].x1-boxes[1].x0+1
-	h0, h2 := boxes[0].y1-boxes[0].y0+1, boxes[2].y1-boxes[2].y0+1
-	if w0 <= w1 || h0 <= h2 || w0+w1 != 120 || h0+h2 != 40 {
-		t.Errorf("w0 grown: widths %d+%d, heights %d+%d", w0, w1, h0, h2)
+	// A full 2x2 grid has no cell to spare: a grown window stretches its
+	// column and row, and the window sharing them, like % in an HTML table.
+	ws := windows(4)
+	boxes := evenLayout(ws, 120, 40, windowSizes{"@0": {normal: 2}})
+	if width(boxes[0]) <= width(boxes[1]) || height(boxes[0]) <= height(boxes[2]) ||
+		width(boxes[2]) != width(boxes[0]) || width(boxes[0])+width(boxes[1]) != 120 {
+		t.Errorf("w0 grown in a full grid: %+v", boxes)
 	}
-	if boxes[2].x1-boxes[2].x0 != boxes[3].x1-boxes[3].x0 {
-		t.Errorf("the other row should be unchanged: %+v", boxes)
+	// Shrinking narrows too.
+	boxes = evenLayout(ws, 120, 40, windowSizes{"@0": {normal: -3}})
+	if width(boxes[0]) >= width(boxes[1]) {
+		t.Errorf("w0 shrunk: %+v", boxes)
+	}
+
+	// 5 windows on 3x2 leave a cell empty: w0 at 2x snaps to two cells and
+	// the others move along to fill the grid.
+	ws = windows(5)
+	boxes = evenLayout(ws, 120, 40, windowSizes{"@0": {normal: 3}})
+	want := []cellBox{{0, 0, 79, 19}, {80, 0, 119, 19}, {0, 20, 39, 39}, {40, 20, 79, 39}, {80, 20, 119, 39}}
+	if !reflect.DeepEqual(boxes, want) {
+		t.Errorf("w0 snapped beside:\n got %+v\nwant %+v", boxes, want)
+	}
+	// Two windows at 2x and one spare cell: only the larger snaps; the
+	// other stretches its column and row instead.
+	boxes = evenLayout(ws, 120, 40, windowSizes{"@0": {normal: 3}, "@3": {normal: 4}})
+	if width(boxes[3]) < 60 || width(boxes[0]) > width(boxes[3]) {
+		t.Errorf("w3, larger, should be the one with two cells: %+v", boxes)
+	}
+}
+
+func TestSnapDirection(t *testing.T) {
+	// Tall windows on a tall screen: the second cell goes below.
+	ws := windows(5)
+	for _, w := range ws {
+		w.Width, w.Height = 40, 60
+	}
+	free := [][]bool{{true, true, true}, {true, true, true}}
+	order := [][2]int{{0, 0}, {1, 0}, {2, 0}, {0, 1}, {1, 1}, {2, 1}}
+	rects, _ := packWindows(ws, free, order, 40, 20, windowSizes{"@0": {normal: 3}})
+	if rects[0] != (cellRect{0, 0, 0, 1}) || rects[1] != (cellRect{1, 0, 1, 0}) || rects[4] != (cellRect{2, 1, 2, 1}) {
+		t.Errorf("rects = %+v, want w0 down the first column", rects)
 	}
 }
 
@@ -64,16 +95,22 @@ func TestSizedCentredLayout(t *testing.T) {
 	if width(grown[2]) <= width(plain[2]) || height(grown[2]) <= height(plain[2]) {
 		t.Errorf("centre grown with its middle size: %+v, was %+v", grown[2], plain[2])
 	}
-	// Out of the centre, w2 has its normal size again, and w0 (top left)
-	// is centred with size 1.
-	away := overviewLayout(ws, 0, 120, 40, windowSizes{"@2": {normal: 0, middle: 3}})
-	if away[0] != overviewLayout(ws, 0, 120, 40, nil)[0] {
+	// Out of the centre, w2 has its normal size again.
+	away := overviewLayout(ws, 0, 120, 40, windowSizes{"@2": {middle: 3}})
+	if !reflect.DeepEqual(away, overviewLayout(ws, 0, 120, 40, nil)) {
 		t.Errorf("w2's middle size should not apply out of the centre: %+v", away)
 	}
-	// A corner window grows both ways.
-	corner := overviewLayout(ws, 2, 120, 40, windowSizes{"@0": {normal: 3}})
-	if width(corner[0]) <= width(plain[0]) || height(corner[0]) <= height(plain[0]) {
-		t.Errorf("corner window grown: %+v, was %+v", corner[0], plain[0])
+	// The ring has empty cells: the top left window snaps to two cells
+	// along the top, and the next window moves along.
+	snapped := overviewLayout(ws, 2, 120, 40, windowSizes{"@0": {normal: 3}})
+	if snapped[0] != (cellBox{0, 0, 59, 9}) || snapped[1] != (cellBox{60, 0, 89, 9}) {
+		t.Errorf("snapped = %+v", snapped)
+	}
+	// Six steps would be a 2x2 block, which a ring one cell deep has no room
+	// for: it keeps two cells and stretches them.
+	block := overviewLayout(ws, 2, 120, 40, windowSizes{"@0": {normal: 6}})
+	if width(block[0]) <= width(snapped[0]) || height(block[0]) <= height(snapped[0]) || block[0].y1 >= block[2].y0 {
+		t.Errorf("block = %+v, snapped %+v", block[0], snapped[0])
 	}
 	// Still a grid a live window can be cut into.
 	ws = windows(12)
@@ -123,5 +160,22 @@ func TestResizeKeys(t *testing.T) {
 	m.handle(event{key: keyOverview})
 	if got := m.sizes["@0"]; got != (winSize{normal: 2}) {
 		t.Errorf("after = in the centre: %+v", got)
+	}
+}
+
+func TestSnapBlock(t *testing.T) {
+	// 20 windows: an 8x8 grid, its ring two cells deep, with room to spare.
+	ws := windows(20)
+	plain := overviewLayout(ws, 0, 160, 80, nil)
+	block := overviewLayout(ws, 0, 160, 80, windowSizes{"@1": {normal: 6}})
+	if width(block[1]) != 2*width(plain[1]) || height(block[1]) != 2*height(plain[1]) {
+		t.Errorf("w1 at six steps = %+v, want a 2x2 block of %+v", block[1], plain[1])
+	}
+	for i, b := range block {
+		for j, o := range block {
+			if i < j && b.x0 <= o.x1 && o.x0 <= b.x1 && b.y0 <= o.y1 && o.y0 <= b.y1 {
+				t.Errorf("w%d %+v overlaps w%d %+v", i, b, j, o)
+			}
+		}
 	}
 }

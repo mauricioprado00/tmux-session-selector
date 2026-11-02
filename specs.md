@@ -395,14 +395,38 @@ grid or the ring, and a *middle* size, for when it is the centre window. The
 keys change the one in use, so a window grown in the centre goes back to its
 normal size, however grown that is, when it leaves the centre.
 
-- Even grid: within a row, windows get widths in proportion to their sizes;
-  each row gets a height in proportion to the largest size in it.
-- Centred: the grid's columns and rows are scaled. The centre's middle size
-  scales its columns and rows (size 1 is the middle half); every other column
-  or row takes the largest normal size of the windows in it. So a corner
-  window grows both ways, one beside or above the centre only away from it,
-  and the layout stays a grid, which a live window (`w`) is built from, sizes
-  and all.
+Both layouts are grids of cells: the even grid has its rows and columns
+(chosen for the number of windows, as before), and the centred view a k×k
+grid whose middle half is the centre window and whose ring of cells around
+it holds the others. Windows fill the cells in order: row by row in the even
+grid, and in the ring the layer next to the centre first, each layer
+clockwise from its top left corner.
+
+- **Snapping.** A window takes more cells as it grows: two at about 2× (three
+  steps), a 2×2 block at about 3.8× (six steps). Each time the windows are
+  placed, every window goes at the first free cell in order, so the windows
+  after a grown one move along, and empty cells of the grid are used up. Of
+  two cells, the second goes beside or below, whichever makes the window's
+  box closest to the shape of the real window (beside when equal); a block
+  that has no room where the window goes (a ring one cell deep) is two cells
+  instead.
+- **Only spare cells.** A grid has as many spare cells as it has cells beyond
+  one per window. They go to the largest windows first; a window that cannot
+  have the cells it asks for keeps fewer.
+- **Like % in an HTML table.** What a window's cells do not cover of its size
+  (all of it when it has not snapped, or is shrunk) stretches the columns and
+  rows it is in: each column or row is as wide or tall, relative to the
+  others, as the mean of the windows in it. So a window in a full grid grows
+  by widening its column and row, and the windows sharing them grow with it.
+- In the even grid, a row left with empty cells whose windows all lie within
+  it spreads them over the full width, as the last row always did.
+- In the centred view, the centre's middle size scales its columns and rows
+  (size 1 is the middle half); the centre does not snap.
+
+The layout stays a grid of rows and columns, which a live window (`w`) is
+built from, sizes and all; in the rare arrangement of spanning windows that
+cannot be cut into rows and columns, the live window keeps a tiled layout and
+says so.
 
 Sizes are remembered between runs in the state file (§6.4), by window id, as
 `size.@3=N,M`: the normal and middle sizes in steps. Saving drops the sizes
