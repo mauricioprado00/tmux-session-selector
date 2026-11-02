@@ -239,14 +239,24 @@ func (m *model) refreshOverview() {
 
 // resizeFocus grows (d = 1) or shrinks (d = -1) the window in focus by a
 // step, or with reset gives it size 1 again: its middle size if it is the
-// centre window, else its normal size. The sizes are saved for next time.
+// centre window, else its normal size. A reset of a window already at 1
+// resets every window of the session, both sizes, as vim's Ctrl-W = makes
+// all windows equal; so = = resets everything. The sizes are saved for next
+// time.
 func (m *model) resizeFocus(d int, reset bool) {
 	ov := m.overview
 	w := ov.session.Windows[ov.focus]
 	if m.sizes == nil {
 		m.sizes = windowSizes{}
 	}
-	m.sizes.change(w.ID, w == ov.center, d, reset)
+	if reset && m.sizes.of(w, w == ov.center) == 1 {
+		for _, x := range ov.session.Windows {
+			delete(m.sizes, x.ID)
+		}
+		m.status = "every window back to size 1"
+	} else {
+		m.sizes.change(w.ID, w == ov.center, d, reset)
+	}
 	// Every window the selector knows of is still open; sizes of the others
 	// are dropped.
 	live := map[string]bool{}
@@ -677,7 +687,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		leave = "close"
 	}
 	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  + - = size  w make a live window  ^L titles  Enter switch  Esc/q " + leave})
+		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  + - = size  == all  w make a live window  ^L titles  Enter switch  Esc/q " + leave})
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.

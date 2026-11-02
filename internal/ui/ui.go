@@ -1464,6 +1464,7 @@ var helpText = []string{
 	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",
 	"| + - =\tgrow / shrink the window in focus, or back to size 1;",
 	"|\tin the centre it has a size of its own (remembered)",
+	"| = =\tevery window back to size 1 (= on a window already at 1)",
 	"| Ctrl-L\tshow or hide Claude Code session titles",
 	"| w\tjoin the windows into one live window laid out like this,",
 	"|\tsplit back into them the next time the selector opens there",

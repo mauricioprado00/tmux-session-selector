@@ -386,7 +386,7 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 | click / wheel | focus a window / the next or previous one |
 | `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |
 | `+` / `-` | grow / shrink the window in focus by a step of 1.25×, up to six steps either way (about 3.8× or a quarter); the header shows its size when it is not 1 |
-| `=` | give the window in focus size 1 again |
+| `=` | give the window in focus size 1 again; on a window already at 1, give every window of the session size 1, both sizes, as vim's `Ctrl-W =` makes all windows equal (so `=` `=` resets everything) |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
 
 Sizes are relative: a window grows by taking room from the others. Each

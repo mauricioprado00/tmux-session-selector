@@ -212,7 +212,8 @@ row that window takes the middle half and the others surround it. Arrows (or
 `hjkl`) move the focus, wrapping at the edges; `Tab` steps through the windows
 in order and typing a window's number focuses it; `o` puts the window in focus in the centre (again on
 the centred one to share the screen evenly), `+` / `-` grow or shrink the
-window in focus and `=` gives it its share back: grown far enough it takes
+window in focus and `=` gives it its share back (`=` `=` gives every window
+its share back): grown far enough it takes
 the empty cell next to it and the windows after it move along, and in a full
 grid it widens its row and column instead (a window has one size in the grid
 or ring and another in the centre, both remembered between runs),

@@ -3,6 +3,7 @@ package ui
 import (
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
@@ -176,6 +177,37 @@ func TestSnapBlock(t *testing.T) {
 			if i < j && b.x0 <= o.x1 && o.x0 <= b.x1 && b.y0 <= o.y1 && o.y0 <= b.y1 {
 				t.Errorf("w%d %+v overlaps w%d %+v", i, b, j, o)
 			}
+		}
+	}
+}
+
+func TestResetAll(t *testing.T) {
+	s := &tmux.Session{ID: "$1", Name: "work", Windows: windows(3)}
+	roots, total := buildTree([]*tmux.Session{s}, tmux.Location{}, "")
+	path := filepath.Join(t.TempDir(), "state")
+	m := &model{roots: roots, total: total, screens: map[string]screen{}, stateFile: path}
+	m.setQuery()
+	m.handle(event{key: keyOverview}) // even, focus on w0
+	key := func(r rune) { m.handle(event{key: keyRune, r: r}) }
+	key('+')
+	m.handle(event{key: keyTab})
+	key('-')
+	m.handle(event{key: keyOverview}) // centre w1
+	key('+')
+	if len(m.sizes) != 2 {
+		t.Fatalf("sizes = %v", m.sizes)
+	}
+	key('=') // w1's middle size back to 1; the rest stays
+	if got := m.sizes["@1"]; got != (winSize{normal: -1}) || len(m.sizes) != 2 || m.status != "" {
+		t.Fatalf("after one =: %v, status %q", m.sizes, m.status)
+	}
+	key('=') // already at 1: everything
+	if len(m.sizes) != 0 || m.status == "" {
+		t.Errorf("after = =: %v, status %q", m.sizes, m.status)
+	}
+	for k := range readState(path) {
+		if strings.HasPrefix(k, sizeKey) {
+			t.Errorf("saved size left: %s", k)
 		}
 	}
 }
