@@ -82,7 +82,10 @@ type model struct {
 	stateFile string
 	// titles shows Claude Code session titles, in the list and the
 	// overview; Ctrl-L switches it, and it is remembered.
-	titles  bool
+	titles bool
+	// sizes are the overview sizes of windows grown or shrunk with + and -,
+	// remembered between runs.
+	sizes   windowSizes
 	help    bool
 	helpTop int // first help line shown, when the help is scrolled
 	// normal is normal mode, where keys are commands as in tmux's chooser;
@@ -153,7 +156,7 @@ func Run(o Options) (*tmux.Target, error) {
 	state := readState(o.StateFile)
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
 		template: o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
-		titles: state["claude-titles"] != "off"}
+		titles: state["claude-titles"] != "off", sizes: readSizes(state)}
 	if o.Regex {
 		m.mode = filter.Regex
 	}
@@ -1459,6 +1462,8 @@ var helpText = []string{
 	"| Enter  double-click\tswitch to the window in focus",
 	"| click  wheel\tfocus a window / the next or previous one",
 	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",
+	"| + - =\tgrow / shrink the window in focus, or back to size 1;",
+	"|\tin the centre it has a size of its own (remembered)",
 	"| Ctrl-L\tshow or hide Claude Code session titles",
 	"| w\tjoin the windows into one live window laid out like this,",
 	"|\tsplit back into them the next time the selector opens there",

@@ -17,7 +17,7 @@ func windows(n int) []*tmux.Window {
 }
 
 func TestCentredLayout(t *testing.T) {
-	boxes := overviewLayout(windows(5), 2, 120, 40)
+	boxes := overviewLayout(windows(5), 2, 120, 40, nil)
 	if got := boxes[2]; got != (cellBox{30, 10, 89, 29}) {
 		t.Errorf("centre = %+v, want the middle half each way", got)
 	}
@@ -29,7 +29,7 @@ func TestCentredLayout(t *testing.T) {
 		}
 	}
 	// More windows than the 12 ring cells of a 4×4 grid: an 8×8 grid.
-	boxes = overviewLayout(windows(20), 0, 160, 80)
+	boxes = overviewLayout(windows(20), 0, 160, 80, nil)
 	if got := boxes[0]; got != (cellBox{40, 20, 119, 59}) {
 		t.Errorf("centre of 8x8 = %+v", got)
 	}
@@ -43,7 +43,7 @@ func TestCentredLayout(t *testing.T) {
 }
 
 func TestEvenLayout(t *testing.T) {
-	boxes := evenLayout(windows(5), 120, 40)
+	boxes := evenLayout(windows(5), 120, 40, nil)
 	if len(boxes) != 5 || boxes[0].x0 != 0 || boxes[0].y0 != 0 {
 		t.Fatalf("boxes = %+v", boxes)
 	}
@@ -123,7 +123,7 @@ func TestOverviewKeys(t *testing.T) {
 // key towards the centre focuses it, and that the centre reaches every side.
 func TestCentreReachable(t *testing.T) {
 	ws := windows(12)
-	ov := &overview{cells: overviewLayout(ws, 8, 240, 60)}
+	ov := &overview{cells: overviewLayout(ws, 8, 240, 60, nil)}
 	c := ov.cells[8]
 	dirs := []struct {
 		name   string
@@ -156,7 +156,7 @@ func TestCentreReachable(t *testing.T) {
 func TestOverviewNavigation(t *testing.T) {
 	ws := windows(12)
 	ws[9].Index, ws[10].Index, ws[11].Index = 17, 21, 30 // gaps in the numbering
-	ov := &overview{session: &tmux.Session{Windows: ws}, cells: evenLayout(ws, 160, 60)}
+	ov := &overview{session: &tmux.Session{Windows: ws}, cells: evenLayout(ws, 160, 60, nil)}
 	// 12 windows on 160x60: rows of the same width; w0 is top left.
 	ov.focus = 0
 	if got := ov.nearest(-1, 0); ov.cells[got].y0 != 0 || ov.cells[got].x1 != 159 {
@@ -216,7 +216,7 @@ func TestTabStillExpandsInTheList(t *testing.T) {
 // focus should come out in line with where it went in.
 func TestFocusPointThroughCentre(t *testing.T) {
 	ws := windows(12)
-	ov := &overview{session: &tmux.Session{Windows: ws}, cells: overviewLayout(ws, 8, 240, 60)}
+	ov := &overview{session: &tmux.Session{Windows: ws}, cells: overviewLayout(ws, 8, 240, 60, nil)}
 	// A 4x4 grid of 60x15 cells; the centre takes columns 1-2, rows 1-2.
 	at := func(col, row int) int {
 		for i, b := range ov.cells {
@@ -260,7 +260,7 @@ func TestGuillotineCentred(t *testing.T) {
 		w.Layout = fmt.Sprintf("0000,80x24,0,0,%d", i)
 	}
 	var items []placed
-	for i, box := range overviewLayout(ws, 8, 200, 60) {
+	for i, box := range overviewLayout(ws, 8, 200, 60, nil) {
 		items = append(items, placed{box, ws[i]})
 	}
 	tree := guillotine(items)

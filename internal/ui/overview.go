@@ -104,6 +104,12 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			m.askLiveWindow()
 		case ev.r == 'o':
 			ov.toggleCenter()
+		case ev.r == '+':
+			m.resizeFocus(1, false)
+		case ev.r == '-':
+			m.resizeFocus(-1, false)
+		case ev.r == '=':
+			m.resizeFocus(0, true)
 		case ev.r == 'q':
 			return m.leaveOverview()
 		}
@@ -228,6 +234,37 @@ func (m *model) refreshOverview() {
 		if w.ID == centerID {
 			ov.center = w
 		}
+	}
+}
+
+// resizeFocus grows (d = 1) or shrinks (d = -1) the window in focus by a
+// step, or with reset gives it size 1 again: its middle size if it is the
+// centre window, else its normal size. The sizes are saved for next time.
+func (m *model) resizeFocus(d int, reset bool) {
+	ov := m.overview
+	w := ov.session.Windows[ov.focus]
+	if m.sizes == nil {
+		m.sizes = windowSizes{}
+	}
+	m.sizes.change(w.ID, w == ov.center, d, reset)
+	// Every window the selector knows of is still open; sizes of the others
+	// are dropped.
+	live := map[string]bool{}
+	walkTree(m.roots, func(n *node) {
+		if n.window != nil {
+			live[n.window.ID] = true
+		}
+	})
+	for _, x := range ov.session.Windows {
+		live[x.ID] = true
+	}
+	for id := range m.sizes {
+		if !live[id] {
+			delete(m.sizes, id)
+		}
+	}
+	if err := updateState(m.stateFile, func(state map[string]string) { writeSizes(state, m.sizes, live) }); err != nil {
+		m.status = "could not remember the sizes: " + err.Error()
 	}
 }
 
@@ -401,30 +438,39 @@ func abs(n int) int {
 }
 
 // overviewLayout places windows in a w×h area: around windows[center] if
-// center >= 0, else evenly. It returns a box per window, in order.
-func overviewLayout(windows []*tmux.Window, center, w, h int) []cellBox {
+// center >= 0, else evenly. It returns a box per window, in order. sizes
+// (nil for all 1) make windows larger or smaller than their share; see
+// centredLayout and evenLayout.
+func overviewLayout(windows []*tmux.Window, center, w, h int, sizes windowSizes) []cellBox {
 	if center < 0 {
-		return evenLayout(windows, w, h)
+		return evenLayout(windows, w, h, sizes)
 	}
+	return centredLayout(windows, center, w, h, sizes)
+}
+
+// centredLayout puts windows[center] in the middle of a k×k grid of cells,
+// taking its middle half each way, and the other windows in the ring of
+// cells around it. Sizes scale the grid's columns and rows: the centre's
+// middle size scales its columns and rows, and every other column or row
+// takes the largest normal size of the windows in it. So a window in a
+// corner grows both ways, one beside or above the centre only away from it,
+// and the grid stays a grid, which a live window can be cut into.
+func centredLayout(windows []*tmux.Window, center, w, h int, sizes windowSizes) []cellBox {
 	n := len(windows)
 	k := overviewRing
 	for k*k-(k/2)*(k/2) < n-1 {
 		k += overviewRing
 	}
-	col := func(i int) int { return i * w / k }
-	row := func(j int) int { return j * h / k }
-	boxes := make([]cellBox, n)
-	boxes[center] = cellBox{col(k / 4), row(k / 4), col(3*k/4) - 1, row(3*k/4) - 1}
+	lo, hi := k/4, 3*k/4-1 // the centre's first and last cell each way
 
 	// The ring's cells: the layer next to the centre first, each layer
 	// clockwise from its top left corner.
 	type cell struct {
-		box   cellBox
+		i, j  int
 		layer int
 		angle float64
 	}
 	var ring []cell
-	lo, hi := k/4, 3*k/4-1 // the centre's first and last cell each way
 	mid := float64(k) / 2
 	for j := 0; j < k; j++ {
 		for i := 0; i < k; i++ {
@@ -437,7 +483,7 @@ func overviewLayout(windows []*tmux.Window, center, w, h int) []cellBox {
 			if angle < 0 {
 				angle += 2 * math.Pi
 			}
-			ring = append(ring, cell{cellBox{col(i), row(j), col(i+1) - 1, row(j+1) - 1}, layer, angle})
+			ring = append(ring, cell{i, j, layer, angle})
 		}
 	}
 	sort.SliceStable(ring, func(a, b int) bool {
@@ -446,11 +492,43 @@ func overviewLayout(windows []*tmux.Window, center, w, h int) []cellBox {
 		}
 		return ring[a].angle < ring[b].angle
 	})
+
+	at := make([]cell, n)
+	colW, rowH := make([]float64, k), make([]float64, k)
 	next := 0
+	for i, win := range windows {
+		if i == center {
+			continue
+		}
+		c := ring[next]
+		next++
+		at[i] = c
+		size := sizes.of(win, false)
+		colW[c.i], rowH[c.j] = max(colW[c.i], size), max(rowH[c.j], size)
+	}
+	middle := sizes.of(windows[center], true)
+	for x := 0; x < k; x++ {
+		switch {
+		case x >= lo && x <= hi:
+			colW[x], rowH[x] = middle, middle
+		default:
+			// An empty column or row keeps the size of one.
+			if colW[x] == 0 {
+				colW[x] = 1
+			}
+			if rowH[x] == 0 {
+				rowH[x] = 1
+			}
+		}
+	}
+	xs, ys := cuts(w, colW), cuts(h, rowH)
+	boxes := make([]cellBox, n)
 	for i := range windows {
-		if i != center {
-			boxes[i] = ring[next].box
-			next++
+		if i == center {
+			boxes[i] = cellBox{xs[lo], ys[lo], xs[hi+1] - 1, ys[hi+1] - 1}
+		} else {
+			c := at[i]
+			boxes[i] = cellBox{xs[c.i], ys[c.j], xs[c.i+1] - 1, ys[c.j+1] - 1}
 		}
 	}
 	return boxes
@@ -458,8 +536,10 @@ func overviewLayout(windows []*tmux.Window, center, w, h int) []cellBox {
 
 // evenLayout shares a w×h area among windows in rows, choosing the number
 // of columns that shows the windows largest; a last, shorter row is spread
-// across the full width.
-func evenLayout(windows []*tmux.Window, w, h int) []cellBox {
+// across the full width. Within a row, windows get widths in proportion to
+// their normal sizes; each row gets a height in proportion to the largest
+// size in it.
+func evenLayout(windows []*tmux.Window, w, h int, sizes windowSizes) []cellBox {
 	n := len(windows)
 	ww, wh := 80, 24
 	if n > 0 && windows[0].Width > 0 && windows[0].Height > 0 {
@@ -474,14 +554,22 @@ func evenLayout(windows []*tmux.Window, w, h int) []cellBox {
 		}
 	}
 	rows := (n + cols - 1) / cols
+	rowH := make([]float64, rows)
+	for i, win := range windows {
+		rowH[i/cols] = max(rowH[i/cols], sizes.of(win, false))
+	}
+	ys := cuts(h, rowH)
 	boxes := make([]cellBox, n)
-	for i := range windows {
-		r, c := i/cols, i%cols
-		inRow := cols
-		if r == rows-1 {
-			inRow = n - r*cols
+	for r := 0; r < rows; r++ {
+		inRow := windows[r*cols : min(n, (r+1)*cols)]
+		widths := make([]float64, len(inRow))
+		for c, win := range inRow {
+			widths[c] = sizes.of(win, false)
 		}
-		boxes[i] = cellBox{c * w / inRow, r * h / rows, (c+1)*w/inRow - 1, (r+1)*h/rows - 1}
+		xs := cuts(w, widths)
+		for c := range inRow {
+			boxes[r*cols+c] = cellBox{xs[c], ys[r], xs[c+1] - 1, ys[r+1] - 1}
+		}
 	}
 	return boxes
 }
@@ -504,6 +592,12 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	left := []span{{text: " OVERVIEW ", style: styleNormal}, {text: " " + clean(s.Name), style: styleHeading},
 		{text: "  " + kind, style: styleDim}}
+	if ov.focus < len(s.Windows) {
+		focused := s.Windows[ov.focus]
+		if size := m.sizes.of(focused, focused == ov.center); size != 1 {
+			left = append(left, span{text: fmt.Sprintf("  size %.3g×", size), style: styleDim})
+		}
+	}
 	used := 0
 	for _, sp := range left {
 		used += textWidth(sp.text)
@@ -519,7 +613,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 			center = i
 		}
 	}
-	ov.cells = overviewLayout(s.Windows, center, width, area)
+	ov.cells = overviewLayout(s.Windows, center, width, area, m.sizes)
 	ov.width, ov.height = width, area
 	var panes []*tmux.Pane
 	for _, w := range s.Windows {
@@ -553,7 +647,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		leave = "close"
 	}
 	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  w make a live window  ^L titles  Enter switch  Esc/q " + leave})
+		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  + - = size  w make a live window  ^L titles  Enter switch  Esc/q " + leave})
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -47,14 +48,21 @@ func readState(path string) map[string]string {
 // saveSetting sets one setting in path, keeping the others. It does nothing
 // for an empty path, and returns the error for the caller to show.
 func saveSetting(path, name, value string) error {
+	return updateState(path, func(state map[string]string) { state[name] = value })
+}
+
+// updateState lets change edit the settings in path, then writes them back
+// if they changed. It does nothing for an empty path.
+func updateState(path string, change func(state map[string]string)) error {
 	if path == "" {
 		return nil
 	}
 	state := readState(path)
-	if state[name] == value {
+	before := fmt.Sprint(state) // maps print sorted by key
+	change(state)
+	if fmt.Sprint(state) == before {
 		return nil
 	}
-	state[name] = value
 	var b strings.Builder
 	for _, k := range sortedKeys(state) {
 		b.WriteString(k + "=" + state[k] + "\n")

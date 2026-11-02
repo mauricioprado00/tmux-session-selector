@@ -385,7 +385,28 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 | `Enter`, double-click | switch to the window in focus, as choosing it in the list does (`--command` applies) |
 | click / wheel | focus a window / the next or previous one |
 | `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |
+| `+` / `-` | grow / shrink the window in focus by a step of 1.25×, up to six steps either way (about 3.8× or a quarter); the header shows its size when it is not 1 |
+| `=` | give the window in focus size 1 again |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
+
+Sizes are relative: a window grows by taking room from the others. Each
+window has two, both 1 at first: a *normal* size, for its place in the even
+grid or the ring, and a *middle* size, for when it is the centre window. The
+keys change the one in use, so a window grown in the centre goes back to its
+normal size, however grown that is, when it leaves the centre.
+
+- Even grid: within a row, windows get widths in proportion to their sizes;
+  each row gets a height in proportion to the largest size in it.
+- Centred: the grid's columns and rows are scaled. The centre's middle size
+  scales its columns and rows (size 1 is the middle half); every other column
+  or row takes the largest normal size of the windows in it. So a corner
+  window grows both ways, one beside or above the centre only away from it,
+  and the layout stays a grid, which a live window (`w`) is built from, sizes
+  and all.
+
+Sizes are remembered between runs in the state file (§6.4), by window id, as
+`size.@3=N,M`: the normal and middle sizes in steps. Saving drops the sizes
+of windows that have closed, as tmux may give their ids to new windows.
 | `Esc`, `q` | back to the list |
 
 On every refresh tick the session is read again, so windows opened or

@@ -175,7 +175,7 @@ func (m *model) makeLiveWindow() (done bool, target *tmux.Target, err error) {
 		}
 	}
 	var items []placed
-	for i, box := range overviewLayout(s.Windows, center, max(ov.width, 1), max(ov.height, 1)) {
+	for i, box := range overviewLayout(s.Windows, center, max(ov.width, 1), max(ov.height, 1), m.sizes) {
 		items = append(items, placed{box, s.Windows[i]})
 	}
 
