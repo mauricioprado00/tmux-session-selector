@@ -128,7 +128,8 @@ they are shown. The title follows the command on the job's row, and
 background processes: jobs stopped with `Ctrl-Z`, or sent to the background
 with `bg` or `&`. They are read with a single
 `ps -A -ww -o pid=,ppid=,pgid=,tpgid=,stat=,args=` when shown, and again when
-the tree is reloaded, never while hidden. A process is one when it descends
+the tree is reloaded, never while hidden. Whether they are shown is
+remembered between runs, as `background-jobs=on|off` in the state file (§6.4). A process is one when it descends
 from the pane's first process (`pane_pid`, its shell), has a controlling
 terminal (`tpgid` > 0), and is neither in the terminal's foreground process
 group nor in the shell's own group. Each is put under its nearest background
@@ -214,7 +215,8 @@ their own help. The same query syntax is printed by `--help`.
 - Mode `words`.
 - Preview shown as it was left last time (§6.4), or, if it has never been
   toggled, when the terminal is at least 30 rows high. `--no-preview` starts
-  it hidden without changing what is remembered. Background processes hidden.
+  it hidden without changing what is remembered. Background processes shown
+  as they were left last time, else hidden.
 
 ### 6.4 Preview
 

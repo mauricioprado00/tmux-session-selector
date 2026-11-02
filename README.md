@@ -132,7 +132,8 @@ shows its session title among the background processes.
 stopped with `Ctrl-Z`, or sent to the background with `bg` or `&`, marked
 `stopped` or `running`. `Enter` on one jumps to its pane (then `fg` brings it
 back); the search finds them by command. They are read with one `ps` call
-when shown, so they cost nothing while hidden.
+when shown, so they cost nothing while hidden. Whether they are shown is
+remembered for the next run, as the preview is.
 
 | Key | Action |
 |---|---|

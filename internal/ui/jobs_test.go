@@ -368,3 +368,19 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestJobsSetting(t *testing.T) {
+	s := &tmux.Session{ID: "$1", Name: "work", Windows: windows(1)}
+	roots, total := buildTree([]*tmux.Session{s}, tmux.Location{}, "")
+	path := filepath.Join(t.TempDir(), "state")
+	m := &model{roots: roots, total: total, stateFile: path, screens: map[string]screen{}}
+	m.setQuery()
+	m.handle(event{key: keyToggleJobs})
+	if !m.jobs || readState(path)["background-jobs"] != "on" {
+		t.Errorf("after Ctrl-Z: shown %v, saved %q", m.jobs, readState(path)["background-jobs"])
+	}
+	m.handle(event{key: keyToggleJobs})
+	if m.jobs || readState(path)["background-jobs"] != "off" {
+		t.Errorf("after a second Ctrl-Z: shown %v, saved %q", m.jobs, readState(path)["background-jobs"])
+	}
+}

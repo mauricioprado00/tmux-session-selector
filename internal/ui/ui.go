@@ -173,7 +173,7 @@ func Run(o Options) (*tmux.Target, error) {
 	m := &model{tmux: o.Tmux, client: o.Client, inside: o.Inside, home: home, query: []rune(o.Query),
 		refreshEvery: o.Refresh,
 		template:     o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
-		titles: state["claude-titles"] != "off", sizes: readSizes(state),
+		titles: state["claude-titles"] != "off", sizes: readSizes(state), jobs: state["background-jobs"] == "on",
 		dirs: state["overview-dirs"] == "on", proc: "/proc", claudeDir: os.Getenv("CLAUDE_CONFIG_DIR")}
 	if m.claudeDir == "" && home != "" {
 		m.claudeDir = filepath.Join(home, ".claude")
@@ -509,7 +509,8 @@ func (m *model) addJobs() {
 }
 
 // toggleJobs shows or hides the background processes of the panes, without
-// reading the tree again, so what is expanded stays expanded.
+// reading the tree again, so what is expanded stays expanded, and
+// remembers that for the next run.
 func (m *model) toggleJobs() {
 	m.jobs = !m.jobs
 	if m.jobs {
@@ -522,6 +523,9 @@ func (m *model) toggleJobs() {
 		detachJobs(m.roots)
 		m.total -= m.jobCount
 		m.jobCount = 0
+	}
+	if err := saveSetting(m.stateFile, "background-jobs", onOff(m.jobs)); err != nil {
+		m.status = "could not remember the background processes setting: " + err.Error()
 	}
 	m.refresh()
 }
