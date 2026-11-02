@@ -385,9 +385,22 @@ keys. The window in focus has a bold yellow frame and a reversed `▶` label.
 | `Enter`, double-click | switch to the window in focus, as choosing it in the list does (`--command` applies) |
 | click / wheel | focus a window / the next or previous one |
 | `o`, `Ctrl-O` | put the window in focus in the centre; on the centred window, go back to the even grid |
+| `/` | search (below) |
+| `d` | show or hide each pane's working directory, at the right of its bottom border; a path too long for the border keeps its end after `…`. Remembered as `overview-dirs=on\|off` in the state file (§6.4); hidden at first |
 | `+` / `-` | grow / shrink the window in focus by a step of 1.25×, up to six steps either way (about 3.8× or a quarter); the header shows its size when it is not 1 |
 | `=` | give the window in focus size 1 again; on a window already at 1, give every window of the session size 1, both sizes, as vim's `Ctrl-W =` makes all windows equal (so `=` `=` resets everything) |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
+
+**Search.** `/` opens a search on the header line. Typing edits the query,
+which has the list's syntax (§7) and matches each pane by the same fields as
+a pane row: session and window name, window index, command, directory and
+title. Panes that do not match are dimmed, as are the labels of windows with
+no match, and the header counts the windows that match. The focus jumps to
+the first matching window from where it is; `Tab` / `Shift-Tab` and the
+arrows go to the next / previous one, wrapping around. `Backspace`,
+`Ctrl-W` and `Ctrl-U` edit as in the list. `Esc` or `Enter` ends the search,
+leaving the focus where it is, so `Enter` again switches to it. While it is
+open, letters are query text, not commands.
 
 Sizes are relative: a window grows by taking room from the others. Each
 window has two, both 1 at first: a *normal* size, for its place in the even

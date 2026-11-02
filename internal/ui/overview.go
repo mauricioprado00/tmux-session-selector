@@ -41,6 +41,8 @@ type overview struct {
 	// The window number being typed, and when its last digit came.
 	number   string
 	numberAt time.Time
+	// search is the search, while / has it open.
+	search *ovSearch
 }
 
 // numberGap is the longest pause between the digits of one window number.
@@ -78,6 +80,9 @@ func (m *model) openOverview() {
 // overviewKey handles an event while the overview is open.
 func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error) {
 	ov := m.overview
+	if ov.search != nil {
+		return m.overviewSearchKey(ev)
+	}
 	dirs := map[key][2]int{keyUp: {0, -1}, keyDown: {0, 1}, keyExpand: {1, 0}, keyCollapse: {-1, 0}}
 	letters := map[rune][2]int{'k': {0, -1}, 'j': {0, 1}, 'l': {1, 0}, 'h': {-1, 0}}
 	if d, ok := dirs[ev.key]; ok {
@@ -104,6 +109,13 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			m.askLiveWindow()
 		case ev.r == 'o':
 			ov.toggleCenter()
+		case ev.r == '/':
+			ov.openSearch()
+		case ev.r == 'd':
+			m.dirs = !m.dirs
+			if err := saveSetting(m.stateFile, "overview-dirs", onOff(m.dirs)); err != nil {
+				m.status = "could not remember the directories setting: " + err.Error()
+			}
 		case ev.r == '+':
 			m.resizeFocus(1, false)
 		case ev.r == '-':
@@ -632,7 +644,11 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	left := []span{{text: " OVERVIEW ", style: styleNormal}, {text: " " + clean(s.Name), style: styleHeading},
 		{text: "  " + kind, style: styleDim}}
-	if ov.focus < len(s.Windows) {
+	if ov.search != nil {
+		var prompt []span
+		prompt, right = m.searchHeader()
+		left = append(left[:2], prompt...)
+	} else if ov.focus < len(s.Windows) {
 		focused := s.Windows[ov.focus]
 		if size := m.sizes.of(focused, focused == ov.center); size != 1 {
 			left = append(left, span{text: fmt.Sprintf("  size %.3g×", size), style: styleDim})
@@ -644,6 +660,10 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	gap := span{text: strings.Repeat(" ", max(2, width-used-textWidth(right.text)))}
 	drawLine(b, 0, width, "", false, append(left, gap, right)...)
+	cursor := 0 // the column after the query, while searching
+	if ov.search != nil {
+		cursor = 1 + textWidth(left[0].text+left[1].text+left[2].text+left[3].text)
+	}
 
 	area := max(1, height-2)
 	c := newCanvas(width, area)
@@ -666,7 +686,20 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 			continue
 		}
 		m.drawWindow(c, s.ID, w, box.x0, box.y0, box.x1, box.y1, "", false)
+		if ov.search.active() {
+			for _, r := range paneRects(w, box.x0, box.y0, box.x1, box.y1) {
+				if !m.paneMatches(w, r.p) {
+					c.dimPane(r.x0, r.y0, r.x1, r.y1)
+				}
+			}
+		}
+		if m.dirs {
+			m.drawDirs(c, w, box.x0, box.y0, box.x1, box.y1)
+		}
 		label, style := fmt.Sprintf(" %d: %s%s ", w.Index, clean(w.Name), clean(w.Flags)), styleLabel
+		if ov.search.active() && !m.windowMatches(w) {
+			style = styleDim
+		}
 		if i == ov.focus {
 			c.restyleBox(box.x0, box.y0, box.x1, box.y1, styleFocus)
 			label, style = " ▶"+label, styleFocusLabel
@@ -686,8 +719,14 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	if m.overviewOnly {
 		leave = "close"
 	}
-	drawLine(b, height-1, width, styleDim, false,
-		span{text: " ←↑↓→ hjkl move  Tab next  0-9 window number  o centre  + - = size  == all  w make a live window  ^L titles  Enter switch  Esc/q " + leave})
+	foot := " ←↑↓→ hjkl move  Tab next  0-9 window number  / search  d dirs  o centre  + - = size  == all  w make a live window  ^L titles  Enter switch  Esc/q " + leave
+	if ov.search != nil {
+		foot = " type to search  Tab Shift-Tab ←↑↓→ next / previous match  ^W ^U delete a word / all  Esc Enter done"
+	}
+	drawLine(b, height-1, width, styleDim, false, span{text: foot})
+	if cursor > 0 {
+		fmt.Fprintf(b, "\x1b[1;%dH\x1b[?25h", min(width, cursor))
+	}
 }
 
 // restyleBox gives the border of a box a style, keeping its characters.
@@ -730,5 +769,27 @@ func drawClaudeTitles(c *canvas, w *tmux.Window, x0, y0, x1, y1, after int) {
 		if r.y0 == y0 && x < r.x1-1 {
 			after = min(x+textWidth(text), r.x1-1)
 		}
+	}
+}
+
+// drawDirs writes each pane's working directory at the right of its bottom
+// border, in the window's box (x0, y0)–(x1, y1). A path too long for the
+// border keeps its end, the most telling part, after a "…".
+func (m *model) drawDirs(c *canvas, w *tmux.Window, x0, y0, x1, y1 int) {
+	for _, r := range paneRects(w, x0, y0, x1, y1) {
+		room := r.x1 - r.x0 - 5 // corners, a column of border each side, spaces
+		path := []rune(clean(tilde(r.p.Path, m.home)))
+		if room < 4 || len(path) == 0 {
+			continue
+		}
+		for textWidth(string(path)) > room {
+			path = path[1:]
+			if textWidth("…"+string(path)) <= room {
+				path = append([]rune("…"), path...)
+				break
+			}
+		}
+		text := " " + string(path) + " "
+		c.text(r.x1-1-textWidth(text), r.y1, r.x1, text, stylePath)
 	}
 }

@@ -210,7 +210,11 @@ An initial query gives a pre-filtered view, for example
 watching them. From a session row they share the screen evenly; from a window
 row that window takes the middle half and the others surround it. Arrows (or
 `hjkl`) move the focus, wrapping at the edges; `Tab` steps through the windows
-in order and typing a window's number focuses it; `o` puts the window in focus in the centre (again on
+in order and typing a window's number focuses it; `/` searches the panes, as
+the list's query does, dimming those that do not match, with `Tab` /
+`Shift-Tab` or the arrows going through the matching windows and `Esc` or
+`Enter` ending the search; `d` shows each pane's working directory on its
+bottom border (remembered); `o` puts the window in focus in the centre (again on
 the centred one to share the screen evenly), `+` / `-` grow or shrink the
 window in focus and `=` gives it its share back (`=` `=` gives every window
 its share back): grown far enough it takes
