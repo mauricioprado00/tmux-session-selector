@@ -686,11 +686,10 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 			}
 			return false, nil, nil
 		}
-		// Any key closes the help. Other than Esc, Enter and F1, it also acts.
+		// Any other key closes the help, and only that: a letter is not
+		// typed, and q in normal mode does not quit.
 		m.help = false
-		if ev.key == keyCancel || ev.key == keyEnter || ev.key == keyHelp {
-			return false, nil, nil
-		}
+		return false, nil, nil
 	}
 	if ev.key == keyToggleMode {
 		m.normal = !m.normal
@@ -1502,9 +1501,9 @@ func (m *model) drawHelp(b *strings.Builder, y, width, height int) string {
 		drawLine(b, y+i, width, "", false, s...)
 	}
 	if len(helpText) <= room {
-		return " Esc closes the help; any other key closes it and does what it does"
+		return " any key closes the help"
 	}
-	return fmt.Sprintf(" ↑↓ PgUp PgDn or wheel to scroll (lines %d–%d of %d)  Esc closes; any other key closes and acts",
+	return fmt.Sprintf(" ↑↓ PgUp PgDn or wheel to scroll (lines %d–%d of %d)  any other key closes the help",
 		m.helpTop+1, m.helpTop+room, len(helpText))
 }
 

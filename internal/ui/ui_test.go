@@ -443,8 +443,14 @@ func TestHelpScrolls(t *testing.T) {
 		t.Errorf("End should scroll to the last page, helpTop %d", m.helpTop)
 	}
 	m.handle(typed('a'))
-	if m.help || string(m.query) != "a" {
-		t.Errorf("another key should close the help and type, query %q", string(m.query))
+	if m.help || string(m.query) != "" {
+		t.Errorf("another key should close the help and not type, query %q", string(m.query))
+	}
+	// In normal mode, q closes the help, not the selector.
+	m.normal = true
+	m.handle(typed('?'))
+	if done, _, _ := m.handle(typed('q')); done || m.help {
+		t.Errorf("q in the help: done %v, help still open %v", done, m.help)
 	}
 }
 
