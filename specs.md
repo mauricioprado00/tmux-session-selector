@@ -407,7 +407,8 @@ tmux", below), or every `--refresh` where that is not possible.
   next to the centre fills first.
 
 The top line names the session and the layout; the bottom line lists the
-keys, those of toggles that are on in bold green (§6.1). The window in focus has a bold yellow frame and a reversed `▶` label.
+keys, those of toggles that are on in bold green (§6.1). After a kill or a
+command the session is read again, so windows that closed go. The window in focus has a bold yellow frame and a reversed `▶` label.
 
 | Key | Action |
 |---|---|
@@ -423,6 +424,11 @@ keys, those of toggles that are on in bold green (§6.1). The window in focus ha
 | `+` / `-` | grow / shrink the window in focus by a step of 1.25×, up to six steps either way (about 3.8× or a quarter); the header shows its size when it is not 1 |
 | `=` | give the window in focus size 1 again; on a window already at 1, give every window of the session size 1, both sizes, as vim's `Ctrl-W =` makes all windows equal (so `=` `=` resets everything) |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
+| `t` | tag or untag the window in focus, and move the focus to the next window, as `t` moves down the list. Tags are the list's: a window tagged here is tagged there, and the other way round. A tagged window has a magenta frame and `✓` before its label; the top line counts the tags |
+| `T` | untag everything |
+| `x` | kill the window in focus, after asking `Kill window N: name? (y/n)` on the top line |
+| `X` | kill the tagged items, or else the window in focus, after asking |
+| `:` | run a tmux command on the tagged items, or else the window in focus, typed on the top line (`%%` is each one, as in the list; `Enter` runs it, `Esc` drops it) |
 
 **Search.** `/` opens a search on the header line. Typing edits the query,
 which has the list's syntax (§7) and matches each pane by the same fields as

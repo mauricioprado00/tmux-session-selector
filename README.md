@@ -227,6 +227,9 @@ its share back): grown far enough it takes
 the empty cell next to it and the windows after it move along, and in a full
 grid it widens its row and column instead (a window has one size in the grid
 or ring and another in the centre, both remembered between runs),
+`t` tags the window in focus (the list's tags: what is tagged in one is
+tagged in the other), `x` kills it after asking, `X` kills the tagged items
+after asking, `:` runs a tmux command on the tagged items or the window,
 `Enter` switches to the window
 in focus, `Esc` or `q` goes back to the list.
 

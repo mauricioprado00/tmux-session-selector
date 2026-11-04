@@ -80,6 +80,9 @@ func (m *model) openOverview() {
 // overviewKey handles an event while the overview is open.
 func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error) {
 	ov := m.overview
+	if m.input != nil {
+		return m.inputKey(ev)
+	}
 	if ov.search != nil {
 		return m.overviewSearchKey(ev)
 	}
@@ -107,6 +110,8 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			ov.typeDigit(ev.r)
 		case ev.r == 'w':
 			m.askLiveWindow()
+		case ev.r == 't' || ev.r == 'T' || ev.r == 'x' || ev.r == 'X' || ev.r == ':' || ev.r == ';':
+			m.overviewCommand(ev.r)
 		case ev.r == 'o':
 			ov.toggleCenter()
 		case ev.r == '/':
@@ -637,7 +642,11 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	if ov.center != nil {
 		kind = fmt.Sprintf("around %d: %s", ov.center.Index, clean(ov.center.Name))
 	}
-	right := span{text: fmt.Sprintf("%d windows", len(s.Windows)), style: styleDim}
+	count := fmt.Sprintf("%d windows", len(s.Windows))
+	if len(m.tags) > 0 {
+		count = fmt.Sprintf("%d tagged  ", len(m.tags)) + count
+	}
+	right := span{text: count, style: styleDim}
 	if m.confirm != nil {
 		right = span{text: clean(m.confirm.question) + " (y/n)", style: styleConfirm}
 	}
@@ -646,7 +655,11 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	left := []span{{text: " OVERVIEW ", style: styleNormal}, {text: " " + clean(s.Name), style: styleHeading},
 		{text: "  " + kind, style: styleDim}}
-	if ov.search != nil {
+	if m.input != nil {
+		left = append(left[:2], span{text: "  " + clean(m.input.label), style: styleConfirm},
+			span{text: clean(string(m.input.text))})
+		right = span{text: "Enter run  Esc cancel", style: styleDim}
+	} else if ov.search != nil {
 		var prompt []span
 		prompt, right = m.searchHeader()
 		left = append(left[:2], prompt...)
@@ -662,9 +675,9 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	gap := span{text: strings.Repeat(" ", max(2, width-used-textWidth(right.text)))}
 	drawLine(b, 0, width, "", false, append(left, gap, right)...)
-	cursor := 0 // the column after the query, while searching
-	if ov.search != nil {
-		cursor = 1 + textWidth(left[0].text+left[1].text+left[2].text+left[3].text)
+	cursor := 0 // the column after the query or command being typed
+	if m.input != nil || ov.search != nil {
+		cursor = 1 + used
 	}
 
 	area := max(1, height-2)
@@ -702,6 +715,10 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		if ov.search.active() && !m.windowMatches(w) {
 			style = styleDim
 		}
+		if m.windowTagged(w) {
+			c.restyleBox(box.x0, box.y0, box.x1, box.y1, styleTagged)
+			label, style = " ✓"+label, styleTagged
+		}
 		if i == ov.focus {
 			c.restyleBox(box.x0, box.y0, box.x1, box.y1, styleFocus)
 			label, style = " ▶"+label, styleFocusLabel
@@ -721,7 +738,8 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	if m.overviewOnly {
 		leave = "close"
 	}
-	foot := " ←↑↓→ hjkl move  Tab next  0-9 window number  / search  d dirs  o centre  + - = size  == all  w make a live window  ^L titles  Enter switch  Esc/q " + leave
+	// The keys to leave first, so a narrow screen cuts the others.
+	foot := " ←↑↓→ hjkl move  Enter switch  Esc/q " + leave + "  Tab next  0-9 window  / search  t tag  x kill  : command  d dirs  o centre  + - = size  == all  w live window  ^L titles"
 	if ov.search != nil {
 		foot = " type to search  Tab Shift-Tab ←↑↓→ next / previous match  ^W ^U delete a word / all  Esc Enter done"
 	}

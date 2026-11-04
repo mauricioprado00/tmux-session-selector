@@ -647,25 +647,8 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 	if m.menu != nil {
 		return m.menuKey(ev)
 	}
-	if p := m.input; p != nil {
-		switch ev.key {
-		case keyRune:
-			p.text = append(p.text, ev.r)
-		case keyBackspace:
-			if len(p.text) > 0 {
-				p.text = p.text[:len(p.text)-1]
-			}
-		case keyDeleteWord:
-			p.text = deleteWord(p.text)
-		case keyClear:
-			p.text = nil
-		case keyCancel:
-			m.input = nil
-		case keyEnter:
-			m.input = nil
-			return p.action(string(p.text))
-		}
-		return false, nil, nil
+	if m.input != nil {
+		return m.inputKey(ev)
 	}
 	if m.help {
 		// Movement keys and the wheel scroll the help.
@@ -1630,6 +1613,9 @@ var helpText = []string{
 	"|\tin the centre it has a size of its own (remembered)",
 	"| = =\tevery window back to size 1 (= on a window already at 1)",
 	"| Ctrl-L\tshow or hide Claude Code session titles",
+	"| t T\ttag or untag the window / untag all (the list's tags)",
+	"| x X\tkill the window / the tagged items (asks y/n)",
+	"| :\trun a command on the tagged items, or the window",
 	"| w\tjoin the windows into one live window laid out like this,",
 	"|\tsplit back into them the next time the selector opens there",
 	"| Esc  q\tback to the list",
