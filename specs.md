@@ -424,6 +424,7 @@ command the session is read again, so windows that closed go. The window in focu
 | `+` / `-` | grow / shrink the window in focus by a step of 1.25×, up to six steps either way (about 3.8× or a quarter); the header shows its size when it is not 1 |
 | `=` | give the window in focus size 1 again; on a window already at 1, give every window of the session size 1, both sizes, as vim's `Ctrl-W =` makes all windows equal (so `=` `=` resets everything) |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
+| `i` | type mode (below): type into the active pane of the window in focus |
 | `t` | tag or untag the window in focus, and move the focus to the next window, as `t` moves down the list. Tags are the list's: a window tagged here is tagged there, and the other way round. A tagged window has a magenta frame and `✓` before its label; the top line counts the tags |
 | `T` | untag everything |
 | `x` | kill the window in focus, after asking `Kill window N: name? (y/n)` on the top line |
@@ -484,6 +485,27 @@ Sizes are remembered between runs in the state file (§6.4), by window id, as
 `size.@3=N,M`: the normal and middle sizes in steps. Saving drops the sizes
 of windows that have closed, as tmux may give their ids to new windows.
 | `Esc`, `q` | back to the list |
+
+**Type mode.** `i` sends what is typed to the active pane of the window in
+focus, through `send-keys`, while the overview goes on showing every window
+live. The bytes read from the terminal are turned into tmux's key names
+(`Up`, `C-Right`, `M-x`, `F5`, `BSpace`…, text as literal runs), so the
+pane's program gets them as it expects them, in its own cursor-key mode;
+the keys of one read go in one tmux call. The pane is framed in red with
+`typing` on its bottom border, the top line shows ` TYPING ` and the pane, the
+terminal cursor is put at the pane's cursor (as captured, so it follows the
+typing), and the bottom line shows how to stop, in red:
+- tmux's prefix (the `prefix` option, read once; `C-b` by default) then `Esc`
+  stops typing, as a nested tmux would; the prefix twice sends it to the
+  pane, and the prefix with any other key sends both. Inside the popup tmux
+  does not see the prefix, so it reaches the selector.
+- `Ctrl-]` stops typing too, and is never sent: it works where tmux takes
+  the prefix for itself (the selector in a pane rather than a popup), and
+  when the prefix is not a plain key.
+- A click outside the pane stops typing and acts as a click in the overview
+  (it focuses the window clicked); other mouse events are not sent.
+Keys after the one that stops typing, in the same read, are the overview's.
+If the pane closes, type mode ends with a note.
 
 **Following tmux.** While the overview is open (and `--refresh` is not 0),
 a tmux control-mode client is attached to its session:

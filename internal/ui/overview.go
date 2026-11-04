@@ -43,6 +43,8 @@ type overview struct {
 	numberAt time.Time
 	// search is the search, while / has it open.
 	search *ovSearch
+	// typing is type mode, while i has it on: keys go to a pane.
+	typing *typing
 }
 
 // numberGap is the longest pause between the digits of one window number.
@@ -110,6 +112,8 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			ov.typeDigit(ev.r)
 		case ev.r == 'w':
 			m.askLiveWindow()
+		case ev.r == 'i':
+			m.startTyping()
 		case ev.r == 't' || ev.r == 'T' || ev.r == 'x' || ev.r == 'X' || ev.r == ':' || ev.r == ';':
 			m.overviewCommand(ev.r)
 		case ev.r == 'o':
@@ -216,6 +220,10 @@ func (m *model) refreshOverview() {
 	m.fixActivity(sessions)
 	sessions, _ = withoutPane(sessions, m.self, tmux.Location{})
 	m.pruneTags(sessions)
+	if ty := ov.typing; ty != nil && !hasPane(sessions, ty.pane) {
+		ov.typing = nil
+		m.status = "the pane typed into has gone"
+	}
 	var s *tmux.Session
 	for _, x := range sessions {
 		if x.ID == ov.session.ID {
@@ -656,7 +664,9 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	left := []span{{text: " OVERVIEW ", style: styleNormal}, {text: " " + clean(s.Name), style: styleHeading},
 		{text: "  " + kind, style: styleDim}}
-	if m.input != nil {
+	if ov.typing != nil {
+		left, right = m.typingHeader(), span{}
+	} else if m.input != nil {
 		left = append(left[:2], span{text: "  " + clean(m.input.label), style: styleConfirm},
 			span{text: clean(string(m.input.text))})
 		right = span{text: "Enter run  Esc cancel", style: styleDim}
@@ -683,6 +693,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 
 	area := max(1, height-2)
 	c := newCanvas(width, area)
+	typeX, typeY := 0, 0 // the cursor of the pane typed into
 	center := -1
 	for i, w := range s.Windows {
 		if w == ov.center {
@@ -728,6 +739,9 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		if m.titles {
 			m.drawPaneTitles(c, w, box.x0, box.y0, box.x1, box.y1, box.x0+2+textWidth(label))
 		}
+		if ov.typing != nil && w.ID == ov.typing.window {
+			typeX, typeY = m.drawTyping(c, w, box)
+		}
 	}
 	// Screen rows of the boxes, for the mouse.
 	for i := range ov.cells {
@@ -740,13 +754,20 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		leave = "close"
 	}
 	// The keys to leave first, so a narrow screen cuts the others.
-	foot := " ←↑↓→ hjkl move  Enter switch  Esc/q " + leave + "  Tab next  0-9 window  / search  t tag  x kill  : command  d dirs  o centre  + - = size  == all  w live window  ^L titles"
+	foot := " ←↑↓→ hjkl move  Enter switch  Esc/q " + leave + "  i type  Tab next  0-9 window  / search  t tag  x kill  : command  d dirs  o centre  + - = size  == all  w live window  ^L titles"
 	if ov.search != nil {
 		foot = " type to search  Tab Shift-Tab ←↑↓→ next / previous match  ^W ^U delete a word / all  Esc Enter done"
 	}
-	drawLine(b, height-1, width, "", false, hintSpans(foot, m.togglesOn())...)
-	if cursor > 0 {
+	if ov.typing != nil {
+		drawLine(b, height-1, width, "", false, m.typingFooter()...)
+	} else {
+		drawLine(b, height-1, width, "", false, hintSpans(foot, m.togglesOn())...)
+	}
+	switch {
+	case cursor > 0:
 		fmt.Fprintf(b, "\x1b[1;%dH\x1b[?25h", min(width, cursor))
+	case typeX > 0:
+		fmt.Fprintf(b, "\x1b[%d;%dH\x1b[?25h", typeY, typeX)
 	}
 }
 

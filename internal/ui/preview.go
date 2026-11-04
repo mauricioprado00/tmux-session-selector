@@ -126,13 +126,7 @@ func (c *canvas) box(x0, y0, x1, y1 int, style string) {
 // preview, it shows the top-left of the pane unless that would hide the
 // cursor, in which case it scrolls just enough to show it.
 func (c *canvas) blit(x, y, w, h int, screen [][]cell, cx, cy int) {
-	ox, oy := 0, 0
-	if cx >= w {
-		ox = cx - w + 1
-	}
-	if cy >= h {
-		oy = cy - h + 1
-	}
+	ox, oy := blitOffset(w, h, cx, cy)
 	for row := 0; row < h && oy+row < len(screen); row++ {
 		line := screen[oy+row]
 		for col := 0; col < w && ox+col < len(line); col++ {
@@ -140,6 +134,18 @@ func (c *canvas) blit(x, y, w, h int, screen [][]cell, cx, cy int) {
 			c.set(x+col, y+row, cl.r, cl.style)
 		}
 	}
+}
+
+// blitOffset is the first column and row of a pane that blit shows in a
+// w×h area, for the cursor at (cx, cy) to show.
+func blitOffset(w, h, cx, cy int) (ox, oy int) {
+	if cx >= w {
+		ox = cx - w + 1
+	}
+	if cy >= h {
+		oy = cy - h + 1
+	}
+	return ox, oy
 }
 
 // draw writes the canvas to the screen starting at screen row y0 (0-based).
@@ -331,6 +337,19 @@ func (st *sgr) String() string {
 type screen struct {
 	cells [][]cell
 	err   error
+	// The pane's cursor when it was captured, if it was.
+	cx, cy int
+	cursor bool
+}
+
+// paneCursor is where p's cursor is: as captured with its screen, which is
+// newer than the pane list when the overview follows tmux, or else as
+// listed.
+func (m *model) paneCursor(p *tmux.Pane) (int, int) {
+	if s := m.screens[p.ID]; s.cursor {
+		return s.cx, s.cy
+	}
+	return p.CursorX, p.CursorY
 }
 
 // previewPanes lists the panes the preview of n shows in width columns.
@@ -415,7 +434,7 @@ func (m *model) loadScreens(panes []*tmux.Pane) {
 		case err != nil:
 			m.screens[id] = screen{err: err}
 		case ok:
-			m.screens[id] = screen{cells: parseScreen(sc.Text)}
+			m.screens[id] = screen{cells: parseScreen(sc.Text), cx: sc.CursorX, cy: sc.CursorY, cursor: true}
 		}
 	}
 	// Keep the cursor current, so a live preview scrolls with the pane.
@@ -475,7 +494,8 @@ func (m *model) addHit(x0, y0, x1, y1 int, t tmux.Target) {
 func (m *model) drawWindow(c *canvas, sessionID string, w *tmux.Window, x0, y0, x1, y1 int, activeStyle string, paneDetail bool) {
 	rects := paneRects(w, x0, y0, x1, y1)
 	for _, r := range rects {
-		c.blit(r.x0+1, r.y0+1, r.x1-r.x0-1, r.y1-r.y0-1, m.screens[r.p.ID].cells, r.p.CursorX, r.p.CursorY)
+		cx, cy := m.paneCursor(r.p)
+		c.blit(r.x0+1, r.y0+1, r.x1-r.x0-1, r.y1-r.y0-1, m.screens[r.p.ID].cells, cx, cy)
 	}
 	for _, r := range rects {
 		c.box(r.x0, r.y0, r.x1, r.y1, styleBorder)

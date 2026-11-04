@@ -126,6 +126,8 @@ type model struct {
 	menu *menu
 	// The overview, while open.
 	overview *overview
+	// prefix is tmux's prefix key, for type mode in the overview.
+	prefix prefixKey
 	// live keeps the overview up to date through a control-mode client.
 	live controlState
 	// refreshEvery is Options.Refresh: how often the preview, and the overview
@@ -223,7 +225,7 @@ func Run(o Options) (*tmux.Target, error) {
 	_, h := t.size()
 	m.preview = initialPreview(o.NoPreview, state["preview"], h)
 
-	keys := make(chan []event)
+	keys := make(chan []byte)
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -232,7 +234,7 @@ func Run(o Options) (*tmux.Target, error) {
 				close(keys)
 				return
 			}
-			keys <- decode(buf[:n])
+			keys <- append([]byte(nil), buf[:n]...)
 		}
 	}()
 	winch := make(chan os.Signal, 1)
@@ -264,14 +266,12 @@ func Run(o Options) (*tmux.Target, error) {
 			news = m.live.ctl.News
 		}
 		select {
-		case evs, ok := <-keys:
+		case raw, ok := <-keys:
 			if !ok {
 				return nil, errors.New("terminal closed")
 			}
-			for _, ev := range evs {
-				if done, target, err := m.handle(ev); done {
-					return target, err
-				}
+			if done, target, err := m.terminalInput(raw); done {
+				return target, err
 			}
 		case <-winch:
 		case <-tick:
@@ -297,6 +297,27 @@ func Run(o Options) (*tmux.Target, error) {
 			return nil, nil
 		}
 	}
+}
+
+// terminalInput handles bytes read from the terminal: in the overview's type mode
+// they go to a pane, as they are, else they are decoded into keys.
+func (m *model) terminalInput(raw []byte) (done bool, target *tmux.Target, err error) {
+	for len(raw) > 0 {
+		if m.isTyping() {
+			if raw, done, target, err = m.typeInput(raw); done {
+				return done, target, err
+			}
+			continue
+		}
+		evs := decode(raw)
+		raw = nil
+		for _, ev := range evs {
+			if done, target, err := m.handle(ev); done {
+				return done, target, err
+			}
+		}
+	}
+	return false, nil, nil
 }
 
 // initialPreview is whether the preview starts shown: never with
@@ -1638,6 +1659,8 @@ var helpText = []string{
 	"|\tin the centre it has a size of its own (remembered)",
 	"| = =\tevery window back to size 1 (= on a window already at 1)",
 	"| Ctrl-L\tshow or hide Claude Code session titles",
+	"| i\ttype into the active pane of the window in focus; tmux's",
+	"|\tprefix then Esc, or Ctrl-], stops (prefix twice sends it)",
 	"| t T\ttag or untag the window / untag all (the list's tags)",
 	"| x X\tkill the window / the tagged items (asks y/n)",
 	"| :\trun a command on the tagged items, or the window",
