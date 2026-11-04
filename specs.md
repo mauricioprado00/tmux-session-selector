@@ -425,6 +425,7 @@ command the session is read again, so windows that closed go. The window in focu
 | `=` | give the window in focus size 1 again; on a window already at 1, give every window of the session size 1, both sizes, as vim's `Ctrl-W =` makes all windows equal (so `=` `=` resets everything) |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
 | `i` | type mode (below): type into the active pane of the window in focus |
+| prefix `,` | rename the window in focus, as tmux's `prefix ,` does: the top line asks for the name, starting from the current one (`Enter` renames, `Esc` cancels, an empty name changes nothing). tmux does not see its prefix inside the popup, so the selector takes it: it is read from the `prefix` option with the pane list (`#{prefix}`), and the prefix then any other key does nothing, as an unbound key in tmux. In type mode it renames the window typed into, and typing goes on after |
 | `t` | tag or untag the window in focus, and move the focus to the next window, as `t` moves down the list. Tags are the list's: a window tagged here is tagged there, and the other way round. A tagged window has a magenta frame and `✓` before its label; the top line counts the tags |
 | `T` | untag everything |
 | `x` | kill the window in focus, after asking `Kill window N: name? (y/n)` on the top line |
@@ -497,7 +498,8 @@ terminal cursor is put at the pane's cursor (as captured, so it follows the
 typing), and the bottom line shows how to stop, in red:
 - tmux's prefix (the `prefix` option, read once; `C-b` by default) then `Esc`
   stops typing, as a nested tmux would; the prefix twice sends it to the
-  pane, and the prefix with any other key sends both. Inside the popup tmux
+  pane, the prefix then `,` renames the window, and the prefix with any
+  other key sends both. Inside the popup tmux
   does not see the prefix, so it reaches the selector.
 - `Ctrl-]` stops typing too, and is never sent: it works where tmux takes
   the prefix for itself (the selector in a pane rather than a popup), and

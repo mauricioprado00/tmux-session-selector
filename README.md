@@ -229,7 +229,8 @@ grid it widens its row and column instead (a window has one size in the grid
 or ring and another in the centre, both remembered between runs),
 `i` types into the window's active pane (**type mode**: the pane is framed in
 red and shows its cursor, and tmux's prefix then `Esc`, or `Ctrl-]`, stops;
-the prefix twice sends it), `t` tags the window in focus (the list's tags: what is tagged in one is
+the prefix twice sends it), tmux's prefix then `,` renames the window in
+focus, as in tmux, `t` tags the window in focus (the list's tags: what is tagged in one is
 tagged in the other), `x` kills it after asking, `X` kills the tagged items
 after asking, `:` runs a tmux command on the tagged items or the window,
 `Enter` switches to the window

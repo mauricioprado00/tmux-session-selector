@@ -88,6 +88,7 @@ func (s *Session) ActiveWindow() *Window {
 // Location is where a client currently is.
 type Location struct {
 	Client, Session, Window, Pane string
+	Prefix                        string // the client's prefix key, as C-b
 }
 
 // Target is where to jump to. Window and Pane may be empty.
@@ -167,7 +168,7 @@ var paneFields = []string{
 	"session_group", "session_group_list", "window_layout", "pane_pid",
 }
 
-var locationFields = []string{"client_name", "session_id", "window_id", "pane_id"}
+var locationFields = []string{"client_name", "session_id", "window_id", "pane_id", "prefix"}
 
 func format(fields []string) string {
 	return "#{" + strings.Join(fields, "}"+string(sep)+"#{") + "}"
@@ -254,7 +255,7 @@ func parseLocation(line string) Location {
 	for len(f) < len(locationFields) {
 		f = append(f, "")
 	}
-	return Location{Client: f[0], Session: f[1], Window: f[2], Pane: f[3]}
+	return Location{Client: f[0], Session: f[1], Window: f[2], Pane: f[3], Prefix: f[4]}
 }
 
 // Switch moves client (the calling client when empty) to target, in one

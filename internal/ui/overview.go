@@ -45,6 +45,8 @@ type overview struct {
 	search *ovSearch
 	// typing is type mode, while i has it on: keys go to a pane.
 	typing *typing
+	// prefixed is set when the last key was tmux's prefix.
+	prefixed bool
 }
 
 // numberGap is the longest pause between the digits of one window number.
@@ -664,12 +666,12 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	}
 	left := []span{{text: " OVERVIEW ", style: styleNormal}, {text: " " + clean(s.Name), style: styleHeading},
 		{text: "  " + kind, style: styleDim}}
-	if ov.typing != nil {
-		left, right = m.typingHeader(), span{}
-	} else if m.input != nil {
+	if m.input != nil {
 		left = append(left[:2], span{text: "  " + clean(m.input.label), style: styleConfirm},
 			span{text: clean(string(m.input.text))})
-		right = span{text: "Enter run  Esc cancel", style: styleDim}
+		right = span{text: "Enter ok  Esc cancel", style: styleDim}
+	} else if ov.typing != nil {
+		left, right = m.typingHeader(), span{}
 	} else if ov.search != nil {
 		var prompt []span
 		prompt, right = m.searchHeader()
@@ -754,7 +756,11 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		leave = "close"
 	}
 	// The keys to leave first, so a narrow screen cuts the others.
-	foot := " ←↑↓→ hjkl move  Enter switch  Esc/q " + leave + "  i type  Tab next  0-9 window  / search  t tag  x kill  : command  d dirs  o centre  + - = size  == all  w live window  ^L titles"
+	rename := ""
+	if m.prefix.ok {
+		rename = "  " + m.prefix.name + " , rename"
+	}
+	foot := " ←↑↓→ hjkl move  Enter switch  Esc/q " + leave + "  i type  Tab next  0-9 window  / search  t tag  x kill  : command" + rename + "  d dirs  o centre  + - = size  == all  w live window  ^L titles"
 	if ov.search != nil {
 		foot = " type to search  Tab Shift-Tab ←↑↓→ next / previous match  ^W ^U delete a word / all  Esc Enter done"
 	}

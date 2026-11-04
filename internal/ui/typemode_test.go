@@ -58,6 +58,34 @@ func TestTypeMode(t *testing.T) {
 	if l := lines(); len(l) < 3 || l[2] != "z" {
 		t.Errorf("z before Ctrl-] should reach the pane: %q", l)
 	}
+	// The prefix then , renames the window, while typing and not; the
+	// prompt starts from the name, and typing goes on after.
+	m.overview.focus = 0
+	m.handle(typed('i'))
+	typeIn("\x02,")
+	if m.input == nil || string(m.input.text) != "cat" {
+		t.Fatalf("prefix , should ask for a new name, from the old one: %+v", m.input)
+	}
+	typeIn("\x15typed-in\r")
+	if got := windowNames(t, tm, "a"); !strings.HasPrefix(got, "typed-in ") || !m.isTyping() {
+		t.Errorf("after renaming while typing: %q, typing %v", got, m.isTyping())
+	}
+	typeIn("\x1d")
+	typeIn("\x02,")
+	typeIn("\x15plain\r")
+	if got := windowNames(t, tm, "a"); !strings.HasPrefix(got, "plain ") || m.overview.session.Windows[0].Name != "plain" {
+		t.Errorf("after renaming in the overview: %q", got)
+	}
+	// The prefix then a key it does not bind does nothing: Esc does not
+	// leave the overview.
+	typeIn("\x02\x1b")
+	if m.overview == nil {
+		t.Fatal("prefix Esc outside type mode should not leave the overview")
+	}
+	if !strings.Contains(m.render(200, 40), "C-b , rename") {
+		t.Error("the footer should show prefix , rename")
+	}
+
 	// A click outside the pane stops typing and focuses what was clicked.
 	m.overview.focus = 0
 	m.handle(typed('i'))

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -26,7 +27,6 @@ const (
 // typing is the overview's type mode.
 type typing struct {
 	pane, window string // ids
-	prefixed     bool   // the last key was the prefix
 	// Where the pane is on screen, at the last frame, for the mouse.
 	box cellBox
 }
@@ -56,6 +56,25 @@ func parsePrefix(v string) (byte, bool) {
 	return 0, false
 }
 
+// setPrefix takes tmux's prefix option, as C-b.
+func (m *model) setPrefix(name string) {
+	m.prefix.read, m.prefix.name = true, name
+	m.prefix.b, m.prefix.ok = parsePrefix(name)
+	m.prefix.ok = m.prefix.ok && m.prefix.b != keyStopTyping
+}
+
+// readPrefix reads tmux's prefix, if the pane list has not brought it, and
+// returns whether it is a key the selector can see.
+func (m *model) readPrefix() bool {
+	if !m.prefix.read {
+		m.prefix.read = true
+		if out, err := m.tmux.Run("show-options", "-gv", "prefix"); err == nil {
+			m.setPrefix(strings.TrimSpace(out))
+		}
+	}
+	return m.prefix.ok
+}
+
 // startTyping starts type mode on the active pane of the window in focus.
 func (m *model) startTyping() {
 	ov := m.overview
@@ -64,15 +83,8 @@ func (m *model) startTyping() {
 	if p == nil {
 		return
 	}
-	if !m.prefix.read {
-		m.prefix.read = true
-		if out, err := m.tmux.Run("show-options", "-gv", "prefix"); err == nil {
-			m.prefix.name = strings.TrimSpace(out)
-			m.prefix.b, m.prefix.ok = parsePrefix(m.prefix.name)
-			m.prefix.ok = m.prefix.ok && m.prefix.b != keyStopTyping
-		}
-	}
-	ov.typing = &typing{pane: p.ID, window: w.ID}
+	m.readPrefix()
+	ov.typing, ov.prefixed = &typing{pane: p.ID, window: w.ID}, false
 }
 
 // isTyping is whether the overview is in type mode.
@@ -82,7 +94,8 @@ func (m *model) isTyping() bool { return m.overview != nil && m.overview.typing 
 // into, until a key that stops typing; it returns the bytes after that key,
 // for the overview, or nil.
 func (m *model) typeInput(b []byte) (rest []byte, done bool, target *tmux.Target, err error) {
-	ty := m.overview.typing
+	ov := m.overview
+	ty := ov.typing
 	var send []byte
 	flush := func() {
 		if keys := tmux.Input(send); len(keys) > 0 {
@@ -107,19 +120,25 @@ func (m *model) typeInput(b []byte) (rest []byte, done bool, target *tmux.Target
 		}
 		k := b[:n]
 		switch {
-		case ty.prefixed && len(b) == 1 && b[0] == 0x1b: // prefix, Esc
+		case ov.prefixed && len(b) == 1 && b[0] == 0x1b: // prefix, Esc
+			ov.prefixed = false
 			stop()
 			return nil, false, nil, nil
-		case ty.prefixed && m.prefix.ok && b[0] == m.prefix.b && n == 1: // the prefix twice
-			ty.prefixed = false
+		case ov.prefixed && b[0] == ',' && n == 1: // prefix , renames the window, as in tmux
+			ov.prefixed = false
+			flush()
+			m.renameWindowPrompt(ty.window)
+			return b[1:], false, nil, nil
+		case ov.prefixed && m.prefix.ok && b[0] == m.prefix.b && n == 1: // the prefix twice
+			ov.prefixed = false
 			send = append(send, k...)
-		case ty.prefixed:
+		case ov.prefixed:
 			// The prefix and another key: both go to the pane.
-			ty.prefixed = false
+			ov.prefixed = false
 			send = append(send, m.prefix.b)
 			continue // the key again, as any other
 		case m.prefix.ok && b[0] == m.prefix.b && n == 1:
-			ty.prefixed = true
+			ov.prefixed = true
 		case b[0] == keyStopTyping && n == 1:
 			stop()
 			return b[1:], false, nil, nil
@@ -164,7 +183,8 @@ func (m *model) typingFooter() []span {
 	s = append(s, span{text: " C-]", style: styleTyping}, span{text: " stop typing", style: styleDim})
 	if m.prefix.ok {
 		s = append(s, span{text: "    " + m.prefix.name + " " + m.prefix.name, style: styleTyping},
-			span{text: " send " + m.prefix.name, style: styleDim})
+			span{text: " send " + m.prefix.name, style: styleDim},
+			span{text: "    " + m.prefix.name + " ,", style: styleTyping}, span{text: " rename the window", style: styleDim})
 	}
 	return append(s, span{text: "    click another window", style: styleTyping}, span{text: " stop and focus it", style: styleDim})
 }
@@ -203,4 +223,60 @@ func hasPane(sessions []*tmux.Session, id string) bool {
 		}
 	}
 	return false
+}
+
+// overviewPrefix handles tmux's prefix in the overview outside type mode,
+// where tmux does not see it (in the popup): the prefix then , renames the
+// window in focus, as in tmux, and the prefix then any other key does
+// nothing, as an unbound key in tmux. It returns the bytes left for the
+// overview's keys, and whether it took any; bytes before a prefix are
+// returned on their own, with the prefix left for the next call.
+func (m *model) overviewPrefix(raw []byte) (rest []byte, took bool) {
+	ov := m.overview
+	if ov.prefixed {
+		ov.prefixed = false
+		if raw[0] == ',' {
+			w := ov.session.Windows[ov.focus]
+			m.renameWindowPrompt(w.ID)
+		}
+		_, n := escape(raw)
+		if raw[0] != 0x1b {
+			n = 1
+			if _, size := utf8.DecodeRune(raw); size > 1 {
+				n = size
+			}
+		}
+		return raw[n:], true
+	}
+	switch i := bytes.IndexByte(raw, m.prefix.b); {
+	case i == 0:
+		ov.prefixed = true
+		return raw[1:], true
+	case i > 0:
+		return raw[:i], false // the rest comes back next
+	}
+	return raw, false
+}
+
+// renameWindowPrompt asks on the top line for a new name for window id,
+// starting from its name, as tmux's prefix , does.
+func (m *model) renameWindowPrompt(id string) {
+	for _, w := range m.overview.session.Windows {
+		if w.ID != id {
+			continue
+		}
+		m.input = &inputPrompt{
+			label: "rename window " + strconv.Itoa(w.Index) + ": ",
+			text:  []rune(w.Name),
+			action: func(name string) (bool, *tmux.Target, error) {
+				if name == "" {
+					return false, nil, nil
+				}
+				if _, err := m.tmux.Run("rename-window", "-t", id, "--", name); err != nil {
+					m.status = err.Error()
+				}
+				return m.afterOverviewAction(false, nil, nil)
+			},
+		}
+	}
 }

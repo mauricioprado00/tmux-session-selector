@@ -303,14 +303,22 @@ func Run(o Options) (*tmux.Target, error) {
 // they go to a pane, as they are, else they are decoded into keys.
 func (m *model) terminalInput(raw []byte) (done bool, target *tmux.Target, err error) {
 	for len(raw) > 0 {
-		if m.isTyping() {
+		if m.isTyping() && m.input == nil && m.confirm == nil {
 			if raw, done, target, err = m.typeInput(raw); done {
 				return done, target, err
 			}
 			continue
 		}
-		evs := decode(raw)
-		raw = nil
+		chunk := raw
+		if ov := m.overview; ov != nil && ov.search == nil && m.input == nil && m.confirm == nil && m.readPrefix() {
+			var took bool
+			if chunk, took = m.overviewPrefix(raw); took {
+				raw = chunk
+				continue
+			}
+		}
+		evs := decode(chunk)
+		raw = raw[len(chunk):]
 		for _, ev := range evs {
 			if done, target, err := m.handle(ev); done {
 				return done, target, err
@@ -444,6 +452,9 @@ func (m *model) load() error {
 	if m.inside {
 		if here, err = m.tmux.Current(m.client); err != nil {
 			return err
+		}
+		if !m.prefix.read && here.Prefix != "" {
+			m.setPrefix(here.Prefix) // for the overview, which tmux does not see it in
 		}
 	}
 	sessions, here = withoutPane(sessions, m.self, here)
@@ -1661,6 +1672,7 @@ var helpText = []string{
 	"| Ctrl-L\tshow or hide Claude Code session titles",
 	"| i\ttype into the active pane of the window in focus; tmux's",
 	"|\tprefix then Esc, or Ctrl-], stops (prefix twice sends it)",
+	"| prefix ,\trename the window in focus, as in tmux (also typing)",
 	"| t T\ttag or untag the window / untag all (the list's tags)",
 	"| x X\tkill the window / the tagged items (asks y/n)",
 	"| :\trun a command on the tagged items, or the window",
