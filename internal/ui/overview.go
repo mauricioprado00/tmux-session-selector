@@ -215,6 +215,7 @@ func (m *model) refreshOverview() {
 	}
 	m.fixActivity(sessions)
 	sessions, _ = withoutPane(sessions, m.self, tmux.Location{})
+	m.pruneTags(sessions)
 	var s *tmux.Session
 	for _, x := range sessions {
 		if x.ID == ov.session.ID {

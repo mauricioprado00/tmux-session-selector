@@ -332,7 +332,7 @@ not followed by a known SS3 key is Alt-O.
 | Key | tmux | Action |
 |---|---|---|
 | `Alt-x` | `x` | Kill the selected session, window or pane, after a `y/n` question on the prompt line (`kill-session`, `kill-window` or `kill-pane`). The tree is reloaded and the selection stays at the same position. |
-| `Alt-t` | `t` | Tag or untag the selected row, then move down. Tagged rows are shown in bold magenta with a `+` in the gutter, and the prompt line counts them. Tags are kept by target, so they survive reloads. |
+| `Alt-t` | `t` | Tag or untag the selected row, then move down. Tagged rows are shown in bold magenta with a `+` in the gutter, and the prompt line counts them. Tags are kept by target, so they survive reloads; whenever the list or the overview reads tmux again, the tags of sessions, windows and panes that have gone (killed from here, by a command, or elsewhere) are dropped. |
 | `Alt-T` | `T` | Untag everything. |
 | `Ctrl-T` | `C-t` | Tag every row that matches the query (context rows are not tagged). |
 | `Alt-m` | `m` | Make the selected pane (the active pane of a selected window or session) tmux's marked pane (`select-pane -m`), the default source for `join-pane`, `swap-pane` and `move-pane`. The tree reloads so the `M` flags update. |

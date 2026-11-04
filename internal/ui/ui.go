@@ -426,6 +426,7 @@ func (m *model) load() error {
 		}
 	}
 	sessions, here = withoutPane(sessions, m.self, here)
+	m.pruneTags(sessions)
 	if !m.allGroups {
 		sessions = squashGroups(sessions, here.Session)
 	}
@@ -944,6 +945,30 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		}
 	}
 	return false, nil, nil
+}
+
+// pruneTags drops the tags of sessions, windows and panes that are not in
+// sessions any more, killed from here or elsewhere, so that commands on the
+// tagged items do not count them, nor fail on them.
+func (m *model) pruneTags(sessions []*tmux.Session) {
+	if len(m.tags) == 0 {
+		return
+	}
+	live := map[string]bool{}
+	for _, s := range sessions {
+		live[tmux.Target{Session: s.ID}.String()] = true
+		for _, w := range s.Windows {
+			live[tmux.Target{Session: s.ID, Window: w.ID}.String()] = true
+			for _, p := range w.Panes {
+				live[tmux.Target{Session: s.ID, Window: w.ID, Pane: p.ID}.String()] = true
+			}
+		}
+	}
+	for k := range m.tags {
+		if !live[k] {
+			delete(m.tags, k)
+		}
+	}
 }
 
 func (m *model) tagged(n *node) bool {

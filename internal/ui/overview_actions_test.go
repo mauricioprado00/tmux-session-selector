@@ -63,9 +63,37 @@ func TestOverviewCommands(t *testing.T) {
 		t.Errorf("the overview should show the new names: %q", ov.session.Windows[0].Name)
 	}
 
+	// Killing the tagged windows with a command untags them: the next
+	// command is for the window in focus only.
+	m.handle(typed(':'))
+	typeText(m, "kill-window -t '%%'")
+	m.handle(event{key: keyEnter})
+	if got := windowNames(t, tm, "a"); got != "w3" || len(m.tags) != 0 {
+		t.Fatalf("after killing the tagged windows with a command: %q, tags %v", got, m.tags)
+	}
+	m.handle(typed(':'))
+	if m.input == nil || m.input.label != "command for window 3: w3: " {
+		t.Fatalf("input = %+v", m.input)
+	}
+	m.handle(event{key: keyCancel})
+	// A window closed elsewhere loses its tag when the overview reads the
+	// session again.
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a:5", "-n", "w5")
+	tmuxRun(t, tm, "new-window", "-d", "-t", "a:6", "-n", "w6")
+	m.refreshOverview()
+	for ov.focus = 0; focused() != "w5"; ov.focus++ {
+	}
+	m.handle(typed('t'))
+	m.handle(typed('t'))
+	tmuxRun(t, tm, "kill-window", "-t", "a:5")
+	m.refreshOverview()
+	if len(m.tags) != 1 {
+		t.Fatalf("w5 closed elsewhere should lose its tag: %v", m.tags)
+	}
+
 	// X kills the tagged windows, after asking.
 	m.handle(typed('X'))
-	if m.confirm == nil || m.confirm.question != "Kill 2 tagged items?" {
+	if m.confirm == nil || m.confirm.question != "Kill 1 tagged item?" {
 		t.Fatalf("confirm = %+v", m.confirm)
 	}
 	m.handle(typed('y'))
