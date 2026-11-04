@@ -211,6 +211,8 @@ open the top row is its title (`HELP`), without the query, its status or a
 cursor, and the bottom row is the help's own, in place of the list's key hints: how to
 scroll it (and which lines show) and how to close it. Any other key closes it and does nothing else: a letter is not typed into the
 query, and `q` in normal mode closes the help, not the selector.
+In the overview, `?` or `F1` shows the overview's part of the help only, with
+its own sections for type mode and search; the list's help has it too.
 `F1` alone is not enough because some terminals (GNOME Terminal) keep it for
 their own help. The same query syntax is printed by `--help`.
 
@@ -407,7 +409,8 @@ tmux", below), or every `--refresh` where that is not possible.
   next to the centre fills first.
 
 The top line names the session and the layout; the bottom line lists the
-keys, those of toggles that are on in bold green (§6.1). After a kill or a
+main keys and `? help`, those of toggles that are on in bold green (§6.1);
+the help has the rest. After a kill or a
 command the session is read again, so windows that closed go. The window in focus has a bold yellow frame and a reversed `▶` label.
 
 | Key | Action |
@@ -424,6 +427,7 @@ command the session is read again, so windows that closed go. The window in focu
 | `+` / `-` | grow / shrink the window in focus by a step of 1.25×, up to six steps either way (about 3.8× or a quarter); the header shows its size when it is not 1 |
 | `=` | give the window in focus size 1 again; on a window already at 1, give every window of the session size 1, both sizes, as vim's `Ctrl-W =` makes all windows equal (so `=` `=` resets everything) |
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
+| `?`, `F1`, click the footer | the overview's help: its keys, type mode, search, in place of the windows; it scrolls and closes as the list's (§6.2) |
 | `i` | type mode (below): type into the active pane of the window in focus |
 | prefix `,` | rename the window in focus, as tmux's `prefix ,` does: the top line asks for the name, starting from the current one (`Enter` renames, `Esc` cancels, an empty name changes nothing). tmux does not see its prefix inside the popup, so the selector takes it: it is read from the `prefix` option with the pane list (`#{prefix}`), and the prefix then any other key does nothing, as an unbound key in tmux. In type mode it renames the window typed into, and typing goes on after |
 | `t` | tag or untag the window in focus, and move the focus to the next window, as `t` moves down the list. Tags are the list's: a window tagged here is tagged there, and the other way round. A tagged window has a magenta frame and `✓` before its label; the top line counts the tags |

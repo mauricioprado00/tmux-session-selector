@@ -548,6 +548,9 @@ func TestHelpSpans(t *testing.T) {
 		"in NORMAL or SEARCH.": "[]  []in [1;7]NORMAL[] or [1;7]SEARCH[].",
 		"":                     "[]  ",
 	}
+	if got := text(helpSpans("|\tmore of it")); strings.Contains(got, "|") || !strings.HasSuffix(got, strings.Repeat(" ", helpKeyWidth)+"more of it") {
+		t.Errorf("a line going on from the one above should line up with its meaning: %q", got)
+	}
 	for line, want := range tests {
 		if got := text(helpSpans(line)); got != want {
 			t.Errorf("helpSpans(%q) = %q, want %q", line, got, want)

@@ -87,6 +87,9 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 	if m.input != nil {
 		return m.inputKey(ev)
 	}
+	if m.help {
+		return m.helpKey(ev)
+	}
 	if ov.search != nil {
 		return m.overviewSearchKey(ev)
 	}
@@ -116,6 +119,8 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			m.askLiveWindow()
 		case ev.r == 'i':
 			m.startTyping()
+		case ev.r == '?':
+			m.help, m.helpTop = true, 0
 		case ev.r == 't' || ev.r == 'T' || ev.r == 'x' || ev.r == 'X' || ev.r == ':' || ev.r == ';':
 			m.overviewCommand(ev.r)
 		case ev.r == 'o':
@@ -136,6 +141,8 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 		case ev.r == 'q':
 			return m.leaveOverview()
 		}
+	case keyHelp:
+		m.help, m.helpTop = true, 0
 	case keyOverview:
 		ov.toggleCenter()
 	case keyToggleTitles:
@@ -339,6 +346,8 @@ func (m *model) overviewMouse(ev event) (done bool, target *tmux.Target, err err
 	n := len(ov.session.Windows)
 	switch {
 	case !ev.press:
+	case button == 0 && ev.y == ov.height+1: // the footer, as in the list
+		m.help, m.helpTop = true, 0
 	case button == 64:
 		ov.focus = (ov.focus + n - 1) % n
 	case button == 65:
@@ -648,6 +657,16 @@ func evenLayout(windows []*tmux.Window, w, h int, sizes windowSizes) []cellBox {
 // windows, and a footer with its keys.
 func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	ov := m.overview
+	if m.help {
+		// The help in place of the windows, with its own top and bottom lines.
+		area := max(1, height-2)
+		drawLine(b, 0, width, "", false, span{text: " HELP ", style: styleNormal},
+			span{text: "  the overview's keys", style: styleDim})
+		ov.height = area
+		foot := m.drawHelp(b, 1, width, area)
+		drawLine(b, height-1, width, styleDim, false, span{text: foot})
+		return
+	}
 	s := ov.session
 	kind := "all windows"
 	if ov.center != nil {
@@ -760,7 +779,8 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	if m.prefix.ok {
 		rename = "  " + m.prefix.name + " , rename"
 	}
-	foot := " ←↑↓→ hjkl move  Enter switch  Esc/q " + leave + "  i type  Tab next  0-9 window  / search  t tag  x kill  : command" + rename + "  d dirs  o centre  + - = size  == all  w live window  ^L titles"
+	// The main keys, the toggles' state and ? help; the help has the rest.
+	foot := " ←↑↓→ move  Enter switch  Esc/q " + leave + "  ? help  i type  / search  t tag  x kill  : command" + rename + "  + - size  o centre  d dirs  ^L titles"
 	if ov.search != nil {
 		foot = " type to search  Tab Shift-Tab ←↑↓→ next / previous match  ^W ^U delete a word / all  Esc Enter done"
 	}

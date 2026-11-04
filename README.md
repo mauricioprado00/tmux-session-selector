@@ -227,7 +227,7 @@ its share back): grown far enough it takes
 the empty cell next to it and the windows after it move along, and in a full
 grid it widens its row and column instead (a window has one size in the grid
 or ring and another in the centre, both remembered between runs),
-`i` types into the window's active pane (**type mode**: the pane is framed in
+`?` shows the overview's own help, `i` types into the window's active pane (**type mode**: the pane is framed in
 red and shows its cursor, and tmux's prefix then `Esc`, or `Ctrl-]`, stops;
 the prefix twice sends it), tmux's prefix then `,` renames the window in
 focus, as in tmux, `t` tags the window in focus (the list's tags: what is tagged in one is

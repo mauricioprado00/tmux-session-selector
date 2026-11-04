@@ -123,3 +123,38 @@ func TestOverviewDirs(t *testing.T) {
 		t.Error("d again should hide them, and remember that")
 	}
 }
+
+func TestOverviewHelp(t *testing.T) {
+	m := searchModel()
+	m.handle(typed('?'))
+	if !m.help || m.overview == nil {
+		t.Fatalf("? should open the overview's help, help %v", m.help)
+	}
+	screen := m.render(120, 40)
+	if !strings.Contains(screen, " HELP ") || !strings.Contains(screen, "type mode (i)") ||
+		strings.Contains(screen, "# Normal mode") || strings.Contains(screen, " OVERVIEW ") {
+		t.Errorf("the overview's help should show its own keys, not the list's")
+	}
+	if !strings.Contains(screen, "to scroll (lines 1–38 of") {
+		t.Errorf("a 40-line screen should scroll the overview's help")
+	}
+	m.handle(event{key: keyEnd})
+	m.render(120, 40)
+	if m.helpTop != len(overviewHelpText)-38 {
+		t.Errorf("End should show the last page, helpTop %d", m.helpTop)
+	}
+	m.handle(typed('q')) // closes the help only
+	if m.help || m.overview == nil {
+		t.Errorf("q should close the help and stay in the overview")
+	}
+	m.render(120, 40)
+	m.handle(event{key: keyMouse, button: 0, press: true, x: 5, y: 39}) // the footer
+	if !m.help {
+		t.Error("a click on the footer should open the help")
+	}
+	m.handle(event{key: keyHelp})
+	m.handle(event{key: keyHelp})
+	if !m.help {
+		t.Error("F1 should open it too")
+	}
+}

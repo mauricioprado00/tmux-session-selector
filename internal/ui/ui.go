@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -684,28 +685,7 @@ func (m *model) handle(ev event) (done bool, target *tmux.Target, err error) {
 		return m.inputKey(ev)
 	}
 	if m.help {
-		// Movement keys and the wheel scroll the help.
-		scroll := map[key]int{keyUp: -1, keyDown: 1, keyPageUp: -m.treeH, keyPageDown: m.treeH,
-			keyHome: -len(helpText), keyEnd: len(helpText)}
-		if d, ok := scroll[ev.key]; ok {
-			m.helpTop += d
-			return false, nil, nil
-		}
-		if ev.key == keyMouse {
-			switch {
-			case ev.press && ev.button&^(4|8|16) == 64:
-				m.helpTop--
-			case ev.press && ev.button&^(4|8|16) == 65:
-				m.helpTop++
-			case ev.press && ev.button == 0:
-				m.help = false
-			}
-			return false, nil, nil
-		}
-		// Any other key closes the help, and only that: a letter is not
-		// typed, and q in normal mode does not quit.
-		m.help = false
-		return false, nil, nil
+		return m.helpKey(ev)
 	}
 	if ev.key == keyToggleMode {
 		m.normal = !m.normal
@@ -1526,6 +1506,7 @@ const (
 func (m *model) drawHelp(b *strings.Builder, y, width, height int) string {
 	on := m.togglesOn()
 	room := height
+	helpText := m.helpLines()
 	m.helpTop = max(0, min(m.helpTop, len(helpText)-room))
 	for i := 0; i < room; i++ {
 		var s []span
@@ -1549,9 +1530,13 @@ func (m *model) drawHelp(b *strings.Builder, y, width, height int) string {
 
 // helpSpans styles a line of helpText, which marks its lines with a
 // prefix: "# " a heading, "| " a key and its meaning, "$ " a search example
-// and its meaning (key or example and meaning separated by a tab), and
+// and its meaning (key or example and meaning separated by a tab), "|\t"
+// more of the meaning above, and
 // anything else plain text.
 func helpSpans(line string) []span {
+	if strings.HasPrefix(line, "|\t") {
+		line = "| " + line[1:] // more of the meaning above: no key
+	}
 	prefix, rest := "", line
 	if len(line) >= 2 {
 		prefix, rest = line[:2], line[2:]
@@ -1590,7 +1575,7 @@ const helpKeyWidth = 22
 
 // helpText is shown in place of the tree while help is open; see helpSpans
 // for its markup.
-var helpText = []string{
+var helpText = slices.Concat([]string{
 	"# Two modes, switched with Ctrl-/",
 	"In SEARCH mode (the default) typing filters the list. In NORMAL mode keys",
 	"are commands, as in tmux's own chooser, with vim motions.",
@@ -1652,33 +1637,7 @@ var helpText = []string{
 	"| / f\tback to search mode",
 	"| q\tquit",
 	"",
-	"# Overview (Ctrl-O)",
-	"All windows of the session at once, live, for watching them. From a",
-	"session row they share the screen evenly; from a window row that window",
-	"takes the middle half and the others surround it.",
-	"| ←↑↓→  h j k l\tmove the focus; past an edge it wraps around",
-	"| Tab  Shift-Tab\tnext / previous window by number",
-	"| 0 … 9\tfocus the window with that number (type 1 7 for 17)",
-	"| Home  End\tfirst / last window",
-	"| Enter  double-click\tswitch to the window in focus",
-	"| click  wheel\tfocus a window / the next or previous one",
-	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",
-	"| /\tsearch: panes that do not match dim; Tab Shift-Tab and",
-	"|\tthe arrows go through the matching windows; Esc Enter done",
-	"| d\tshow or hide each pane's directory (remembered)",
-	"| + - =\tgrow / shrink the window in focus, or back to size 1;",
-	"|\tin the centre it has a size of its own (remembered)",
-	"| = =\tevery window back to size 1 (= on a window already at 1)",
-	"| Ctrl-L\tshow or hide Claude Code session titles",
-	"| i\ttype into the active pane of the window in focus; tmux's",
-	"|\tprefix then Esc, or Ctrl-], stops (prefix twice sends it)",
-	"| prefix ,\trename the window in focus, as in tmux (also typing)",
-	"| t T\ttag or untag the window / untag all (the list's tags)",
-	"| x X\tkill the window / the tagged items (asks y/n)",
-	"| :\trun a command on the tagged items, or the window",
-	"| w\tjoin the windows into one live window laid out like this,",
-	"|\tsplit back into them the next time the selector opens there",
-	"| Esc  q\tback to the list",
+}, overviewHelp, []string{
 	"",
 	"# Mouse",
 	"| click\tselect",
@@ -1690,4 +1649,95 @@ var helpText = []string{
 	"| click the footer\tthis help",
 	"",
 	"Arrow keys and the wheel scroll this help; any other key closes it.",
+})
+
+// overviewHelp is the overview's part of the help, which ? in the overview
+// shows on its own, as overviewHelpText.
+var overviewHelp = []string{
+	"# Overview (Ctrl-O)",
+	"All windows of the session at once, live, for watching them. From a",
+	"session row they share the screen evenly; from a window row that window",
+	"takes the middle half and the others surround it.",
+	"| ←↑↓→  h j k l\tmove the focus; past an edge it wraps around",
+	"| Tab  Shift-Tab\tnext / previous window by number",
+	"| 0 … 9\tfocus the window with that number (type 1 7 for 17)",
+	"| Home  End\tfirst / last window",
+	"| Enter  double-click\tswitch to the window in focus",
+	"| click  wheel\tfocus a window / the next or previous one",
+	"| ?  F1\tthe overview's help (or click the footer)",
+	"| Esc  q\tback to the list (or close, when opened with -overview)",
+	"",
+	"# Overview: layout",
+	"| o  Ctrl-O\tcentre the window in focus; again to share evenly",
+	"| + - =\tgrow / shrink the window in focus, or back to size 1;",
+	"|\tin the centre it has a size of its own (remembered)",
+	"| = =\tevery window back to size 1 (= on a window already at 1)",
+	"| d\tshow or hide each pane's directory (remembered)",
+	"| Ctrl-L\tshow or hide Claude Code session titles",
+	"| w\tjoin the windows into one live window laid out like this,",
+	"|\tsplit back into them the next time the selector opens there",
+	"",
+	"# Overview: acting on windows",
+	"| t T\ttag or untag the window / untag all (the list's tags)",
+	"| x X\tkill the window / the tagged items (asks y/n)",
+	"| :\trun a command on the tagged items, or the window",
+	"|\t(%% is each one)",
+	"| prefix ,\trename the window in focus, as in tmux",
+	"",
+	"# Overview: type mode (i)",
+	"i sends what you type to the active pane of the window in focus, framed",
+	"in red, while every window stays live.",
+	"| prefix Esc  Ctrl-]\tstop typing (Ctrl-] also where tmux keeps the prefix)",
+	"| prefix prefix\tsend the prefix to the pane",
+	"| prefix ,\trename the window typed into, then go on typing",
+	"| click another window\tstop typing and focus it",
+	"",
+	"# Overview: search (/)",
+	"Typing filters as the list's query does (words, !, s: w: c: d:, /regex/);",
+	"panes that do not match dim.",
+	"| Tab  Shift-Tab  ←↑↓→\tnext / previous matching window",
+	"| Ctrl-W  Ctrl-U\tdelete a word / the whole query",
+	"| Esc  Enter\tdone searching, the focus stays",
+}
+
+// overviewHelpText is the help ? shows in the overview.
+var overviewHelpText = append(append([]string{}, overviewHelp...), "",
+	"Arrow keys and the wheel scroll this help; any other key closes it.")
+
+// helpKey handles a key while the help is open, in the list or the
+// overview: movement keys and the wheel scroll it, and any other key closes
+// it, and only that: a letter is not typed, and q in normal mode does not
+// quit.
+func (m *model) helpKey(ev event) (done bool, target *tmux.Target, err error) {
+	lines, page := m.helpLines(), m.treeH
+	if m.overview != nil {
+		page = m.overview.height
+	}
+	scroll := map[key]int{keyUp: -1, keyDown: 1, keyPageUp: -page, keyPageDown: page,
+		keyHome: -len(lines), keyEnd: len(lines)}
+	if d, ok := scroll[ev.key]; ok {
+		m.helpTop += d
+		return false, nil, nil
+	}
+	if ev.key == keyMouse {
+		switch {
+		case ev.press && ev.button&^(4|8|16) == 64:
+			m.helpTop--
+		case ev.press && ev.button&^(4|8|16) == 65:
+			m.helpTop++
+		case ev.press && ev.button == 0:
+			m.help = false
+		}
+		return false, nil, nil
+	}
+	m.help = false
+	return false, nil, nil
+}
+
+// helpLines is the help that is open: the overview's, in the overview.
+func (m *model) helpLines() []string {
+	if m.overview != nil {
+		return overviewHelpText
+	}
+	return helpText
 }
