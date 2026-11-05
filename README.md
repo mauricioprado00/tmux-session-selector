@@ -236,6 +236,12 @@ after asking, `:` runs a tmux command on the tagged items or the window,
 `Enter` switches to the window
 in focus, `Esc` or `q` goes back to the list.
 
+A window's label has the colours of its tab in tmux's status line when the tab
+stands out there: a `window-status-style` of its own, the activity, bell or
+silence style while it has that flag, the current window's style, and the
+colours in `window-status-format` / `window-status-current-format`. It changes
+when the tab does, within a second.
+
 The overview keeps up with the panes as tmux itself does: it attaches a
 read-only tmux control-mode client to the session, which tmux tells the moment
 a pane prints or a window changes, and draws again within a frame (at most 30

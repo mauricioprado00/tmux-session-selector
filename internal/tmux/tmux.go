@@ -45,7 +45,11 @@ type Window struct {
 	Flags    string
 	Activity int64  // Unix time of the last activity
 	Layout   string // as #{window_layout}, for select-layout
-	Panes    []*Pane
+	// Tab is the style, as SGR parameters, of the window's tab in the status
+	// line when it stands out there (by window-status-style, an activity or
+	// bell style, or window-status-format's colours), or "".
+	Tab   string
+	Panes []*Pane
 }
 
 // ActivePane returns the window's active pane, or its first one.
@@ -166,12 +170,26 @@ var paneFields = []string{
 	"window_width", "window_height", "window_zoomed_flag",
 	"window_raw_flags", "pane_marked", "session_activity", "window_activity",
 	"session_group", "session_group_list", "window_layout", "pane_pid",
+	tabFields[0], tabFields[1], tabFields[2], tabFields[3],
 }
 
 var locationFields = []string{"client_name", "session_id", "window_id", "pane_id", "prefix"}
 
+// format joins fields into one format: a name such as window_id stands for
+// #{window_id}, and a field starting with # is a format of its own.
 func format(fields []string) string {
-	return "#{" + strings.Join(fields, "}"+string(sep)+"#{") + "}"
+	var b strings.Builder
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteByte(sep)
+		}
+		if strings.HasPrefix(f, "#") {
+			b.WriteString(f)
+		} else {
+			b.WriteString("#{" + f + "}")
+		}
+	}
+	return b.String()
 }
 
 // Sessions lists every session, window and pane on the server.
@@ -209,6 +227,9 @@ func ParsePanes(out string) ([]*Session, error) {
 			w = &Window{ID: f[3], Index: atoi(f[4]), Name: f[5], Active: f[6] == "1",
 				Width: atoi(f[19]), Height: atoi(f[20]), Zoomed: f[21] == "1", Flags: f[22],
 				Activity: int64(atoi(f[25])), Layout: f[28]}
+			if style, ok := TabStyle(f[31], f[32], f[33]); ok && f[30] != "off" {
+				w.Tab = style.SGR()
+			}
 			byWindow[f[0]+f[3]] = w
 			s.Windows = append(s.Windows, w)
 		}

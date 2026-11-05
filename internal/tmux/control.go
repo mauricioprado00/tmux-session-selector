@@ -33,9 +33,11 @@ type Control struct {
 }
 
 // subscription asks tmux to report changes to every pane's title,
-// directory and command, and its window's flags; tmux checks once a second.
-// Output and window changes come without asking.
-const subscription = "refresh-client -B 'tss:%*:#{pane_title}|#{pane_current_path}|#{pane_current_command}|#{window_flags}'\n"
+// directory and command, and its window's flags and the colours of its tab
+// in the status line; tmux checks once a second. Output and window changes
+// come without asking.
+const subscription = "refresh-client -B 'tss:%*:#{pane_title}|#{pane_current_path}|#{pane_current_command}|#{window_flags}|" +
+	tabRange + "|" + tabText + "'\n"
 
 // Control attaches a control-mode client to session (an id such as $1).
 // tmux counts it as attached and sets the session's activity time to now,

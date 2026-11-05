@@ -744,19 +744,28 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		if m.dirs {
 			m.drawDirs(c, w, box.x0, box.y0, box.x1, box.y1)
 		}
-		label, style := fmt.Sprintf(" %d: %s%s ", w.Index, clean(w.Name), clean(w.Flags)), styleLabel
-		if ov.search.active() && !m.windowMatches(w) {
+		// The label: a mark for the focus or a tag, then the window, in the
+		// colours of its tab in the status line when they stand out there.
+		mark, label, style := "", fmt.Sprintf(" %d: %s%s ", w.Index, clean(w.Name), clean(w.Flags)), styleLabel
+		dimmed := ov.search.active() && !m.windowMatches(w)
+		if dimmed {
 			style = styleDim
 		}
 		if m.windowTagged(w) {
 			c.restyleBox(box.x0, box.y0, box.x1, box.y1, styleTagged)
-			label, style = " ✓"+label, styleTagged
+			mark, style = " ✓", styleTagged
 		}
 		if i == ov.focus {
 			c.restyleBox(box.x0, box.y0, box.x1, box.y1, styleFocus)
-			label, style = " ▶"+label, styleFocusLabel
+			mark, style = " ▶", styleFocusLabel
 		}
-		c.text(box.x0+2, box.y0, box.x1-1, label, style)
+		labelStyle := style
+		if w.Tab != "" && !dimmed {
+			labelStyle = w.Tab
+		}
+		c.text(box.x0+2, box.y0, box.x1-1, mark, style)
+		c.text(box.x0+2+textWidth(mark), box.y0, box.x1-1, label, labelStyle)
+		label = mark + label
 		if m.titles {
 			m.drawPaneTitles(c, w, box.x0, box.y0, box.x1, box.y1, box.x0+2+textWidth(label))
 		}

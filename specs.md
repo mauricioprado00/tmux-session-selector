@@ -57,7 +57,7 @@ backslash as `\\`, so the parser decodes those escapes while splitting. A raw
 | Level | Fields |
 |---|---|
 | Session | `session_id`, `session_name`, `session_attached`, `session_activity` |
-| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag`, `window_raw_flags`, `window_activity` |
+| Window | `window_id`, `window_index`, `window_name`, `window_active`, `window_width`, `window_height`, `window_zoomed_flag`, `window_raw_flags`, `window_activity`, `window_layout`, and the tab's style and text (§6.9, Tab colours) |
 | Pane | `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_current_path`, `pane_title`, `pane_left`, `pane_top`, `pane_width`, `pane_height`, `cursor_x`, `cursor_y`, `pane_marked`, `pane_pid` |
 
 The geometry and cursor fields are only used to draw the preview (§6.4).
@@ -413,6 +413,24 @@ main keys and `? help`, those of toggles that are on in bold green (§6.1);
 the help has the rest. After a kill or a
 command the session is read again, so windows that closed go. The window in focus has a bold yellow frame and a reversed `▶` label.
 
+**Tab colours.** A window's label (`index: name` and its flags) is drawn in
+the style of the window's tab in the status line, when that differs from the
+status line's own (`status-style`), so a tab coloured to stand out stands out
+here too; the `▶` and `✓` marks keep their styles, and a search dims the
+label as before. The tab's style is worked out as tmux's default
+`status-format` does it: `status-style`, then `window-status-current-style`
+(the current window, unless `default`) or `window-status-style`, then
+`window-status-last-style`, then `window-status-bell-style` with the `!`
+flag or else `window-status-activity-style` with `#` or `~`, each unless
+`default`; then the `#[...]` styles in the expanded
+`window-status-current-format` or `window-status-format`, where `#[default]`
+goes back to the tab's style. Of the styles the tab's text is written in, the
+one covering the most characters is the label's. tmux expands all of these
+per window in `list-panes` (`#{E:...}`, `#{T:...}`); the selector parses the
+styles (colours by name, number, `colourN`, `#rrggbb` and the X11 names tmux
+knows, such as `purple`; attributes and their `no` forms) into SGR. With
+`status off` there are no tabs and no colours.
+
 | Key | Action |
 |---|---|
 | arrows, `h` `j` `k` `l` | move the focus to the next window that way. A *focus point* inside the focused window remembers where the focus came in: moving up or down keeps its column, left or right its row, so passing through the large centre window comes out in line with where it went in (up twice from the window under the centre's right half reaches the one above that half). Of the windows beyond the focused one, those in line with the point come first, then those beside the focused window, then the closest, then the best aligned. With nothing that way, the focus wraps around to the farthest window the other way. Moving the focus any other way puts the point in the middle of the new window. |
@@ -521,7 +539,8 @@ prints, and `%layout-change`, `%window-add`, `%window-close`,
 `%window-renamed`, `%window-pane-changed`, `%session-window-changed` and
 `%pane-mode-changed` when windows change. A format subscription
 (`refresh-client -B`) on every pane's title, directory and command and its
-window's flags, which tmux checks once a second, covers the rest. The
+window's flags and tab style and text (Tab colours, above), which tmux checks
+once a second, covers the rest. The
 selector reads only the start of each line, merges what arrives between
 frames, and draws a frame at most every 1/30 s: panes that printed are
 captured again, in one tmux call, and on a window change the session is read
