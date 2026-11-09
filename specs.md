@@ -146,7 +146,13 @@ processes not in `/proc` are left out. A session's state is worked out as
 | status `idle` | idle |
 
 A session in a pane belongs to the pane with that id in the window with
-that id (a pane id alone could be another tmux server's). The files are read
+that id (a pane id alone could be another tmux server's). A session in a
+pane that has parked its conversation as a background job (`parkedJobId`)
+shows that job, under the job's name, and its own status is stale: the pane
+takes the job's state, from the job's process (the session file with that
+`jobId`) and `state.json`, and the job is not counted again in the
+background. If the job's process has gone, its `state.json` alone decides;
+with no trace of the job, the pane's own status. The files are read
 with the tree and again every second; the screen is drawn again only when a
 state changes.
 

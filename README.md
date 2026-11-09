@@ -141,7 +141,8 @@ red, with `⚠ needs input` on its bottom border and `⚠` after its window's
 label; `a` there focuses the next window that needs input, then goes on to the
 next session that has one. Claude Code keeps each running session's status,
 and the tmux pane it runs in, in `~/.claude/sessions/PID.json`, and a
-background session's state in `~/.claude/jobs/ID/state.json`; the selector
+background session's state in `~/.claude/jobs/ID/state.json` (a pane that
+parked its conversation in the background shows that job's state); the selector
 reads them every second, which costs a dozen small files, and works out the
 state as `claude agents` does (`CLAUDE_CONFIG_DIR` moves the directory).
 

@@ -9,6 +9,8 @@
 // session id), whose state (working, blocked, done, failed ...) and tempo
 // (active, blocked, idle) feed the Needs input / Working / Completed view of
 // `claude agents`. State works the session out from both, as that view does.
+// A pane's session can park its conversation as a background job
+// (parkedJobId) and then shows that job: the pane takes the job's state.
 package claude
 
 import (
@@ -61,12 +63,26 @@ type Session struct {
 // Read lists the running sessions under Claude Code's directory dir,
 // sorted by process id. proc is /proc, to leave out the files of processes
 // that have gone; "" skips that check.
+//
+// A session in a pane can park its conversation as a background job
+// (parkedJobId) and go on showing that job, under the job's name: the pane
+// then has the job's state, and the job is not listed again on its own.
 func Read(dir, proc string) []Session {
 	if dir == "" {
 		return nil
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "sessions", "*.json"))
-	var out []Session
+	type file struct {
+		pid         int
+		SessionID   string `json:"sessionId"`
+		Name        string `json:"name"`
+		Status      string `json:"status"`
+		Tmux        string `json:"tmux"`
+		JobID       string `json:"jobId"`
+		ParkedJobID string `json:"parkedJobId"`
+	}
+	var all []file
+	byJob := map[string]int{} // job id to its process, in all
 	for _, f := range files {
 		pid, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(f), ".json"))
 		if err != nil || pid <= 0 {
@@ -81,25 +97,53 @@ func Read(dir, proc string) []Session {
 		if err != nil {
 			continue
 		}
-		var s struct {
-			SessionID string `json:"sessionId"`
-			Name      string `json:"name"`
-			Status    string `json:"status"`
-			Tmux      string `json:"tmux"`
-		}
+		var s file
 		if json.Unmarshal(data, &s) != nil || s.SessionID == "" {
 			continue
 		}
-		ses := Session{PID: pid, ID: s.SessionID, Name: s.Name}
+		s.pid = pid
+		if s.JobID == "" && len(s.SessionID) >= 8 && s.Tmux == "" {
+			s.JobID = s.SessionID[:8]
+		}
+		if s.JobID != "" {
+			byJob[s.JobID] = len(all)
+		}
+		all = append(all, s)
+	}
+	parked := map[string]bool{}
+	for _, s := range all {
+		if s.Tmux != "" && s.ParkedJobID != "" {
+			parked[s.ParkedJobID] = true
+		}
+	}
+	var out []Session
+	for _, s := range all {
+		if s.Tmux == "" && parked[s.JobID] {
+			continue // shown in its pane
+		}
+		ses := Session{PID: s.pid, ID: s.SessionID, Name: s.Name}
 		ses.TmuxSession, ses.Window, ses.Pane = parseTmux(s.Tmux)
-		j := readJob(dir, s.SessionID)
-		if j != nil && j.Name != "" {
-			ses.Name = j.Name
+		status, jobID, jobSession := s.Status, s.JobID, s.SessionID
+		if s.Tmux != "" && s.ParkedJobID != "" {
+			// The pane shows the parked job: the status of the job's
+			// process, if it runs, and the job's state.
+			jobID, jobSession, status = s.ParkedJobID, "", ""
+			if i, ok := byJob[jobID]; ok {
+				ses.ID, ses.Name, status, jobSession = all[i].SessionID, all[i].Name, all[i].Status, all[i].SessionID
+			}
 		}
-		if j != nil {
+		if j := readJob(dir, jobID, jobSession); j != nil {
 			ses.Job, ses.Detail = true, j.Detail
+			if j.Name != "" {
+				ses.Name = j.Name
+			}
+			ses.State = state(status, j)
+		} else {
+			if status == "" {
+				status = s.Status // a parked job gone without a trace: the pane's own
+			}
+			ses.State = state(status, nil)
 		}
-		ses.State = state(s.Status, j)
 		out = append(out, ses)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
@@ -115,16 +159,17 @@ type job struct {
 	Name      string `json:"name"`
 }
 
-func readJob(dir, session string) *job {
-	if len(session) < 8 || strings.ContainsAny(session, `/\.`) {
+// readJob reads the state of job id, which runs session ("" if not known).
+func readJob(dir, id, session string) *job {
+	if id == "" || strings.ContainsAny(id, `/\.`) {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "jobs", session[:8], "state.json"))
+	data, err := os.ReadFile(filepath.Join(dir, "jobs", id, "state.json"))
 	if err != nil {
 		return nil
 	}
 	var j job
-	if json.Unmarshal(data, &j) != nil || j.SessionID != "" && j.SessionID != session {
+	if json.Unmarshal(data, &j) != nil || session != "" && j.SessionID != "" && j.SessionID != session {
 		return nil
 	}
 	return &j

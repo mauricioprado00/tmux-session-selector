@@ -31,7 +31,15 @@ func TestRead(t *testing.T) {
 	write("jobs/dddddddd/state.json", `{"sessionId":"dddddddd-4","state":"done","tempo":"idle"}`)
 	write("sessions/14.json", `{"pid":14,"sessionId":"eeeeeeee-5","status":"busy"}`) // gone
 	write("sessions/15.json", `not json`)
-	for _, pid := range []string{"10", "11", "12", "13", "15"} {
+	// A pane that parked its conversation as job ffffffff and shows it;
+	// the job's process waits for input.
+	write("sessions/16.json", `{"sessionId":"99999999-6","name":"xbit-0c","status":"idle","tmux":"w:@6.%9","parkedJobId":"ffffffff"}`)
+	write("sessions/17.json", `{"sessionId":"ffffffff-7","name":"status states","status":"waiting","jobId":"ffffffff"}`)
+	write("jobs/ffffffff/state.json", `{"sessionId":"ffffffff-7","state":"working","tempo":"active","detail":"checking"}`)
+	// A pane whose parked job's process has gone: the job's state.
+	write("sessions/18.json", `{"sessionId":"88888888-8","status":"busy","tmux":"w:@7.%10","parkedJobId":"gggggggg"}`)
+	write("jobs/gggggggg/state.json", `{"sessionId":"gggggggg-9","state":"done","name":"old job"}`)
+	for _, pid := range []string{"10", "11", "12", "13", "15", "16", "17", "18"} {
 		alive(pid)
 	}
 	got := Read(dir, proc)
@@ -40,6 +48,9 @@ func TestRead(t *testing.T) {
 		{PID: 11, ID: "bbbbbbbb-2", Name: "ask", State: NeedsInput, TmuxSession: "w", Window: "@5", Pane: "%8"},
 		{PID: 12, ID: "cccccccc-3", Name: "XBT-1", State: NeedsInput, Job: true, Detail: "which branch?"},
 		{PID: 13, ID: "dddddddd-4", State: Idle, Job: true},
+		{PID: 16, ID: "ffffffff-7", Name: "status states", State: NeedsInput, Job: true, Detail: "checking",
+			TmuxSession: "w", Window: "@6", Pane: "%9"},
+		{PID: 18, ID: "88888888-8", Name: "old job", State: Idle, Job: true, TmuxSession: "w", Window: "@7", Pane: "%10"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Read = %+v", got)
