@@ -129,6 +129,22 @@ them, a pane running an editor (vim, nvim, nano, emacs, helix, micro…) shows
 the files it was opened on, and a Claude Code job stopped with `Ctrl-Z` still
 shows its session title among the background processes.
 
+A pane running Claude Code also shows **what its session is doing**:
+`⚠ needs input` (a question, a permission, a decision), in red and reversed
+so it shows from afar, `● working` in yellow, or `○ idle`. A session or window
+row counts what its panes need (`⚠ 2 need input  ● 1 working`). The top line
+counts every session that needs input, background sessions (`claude agents`)
+included, and while any pane needs input the bottom line starts with
+`a ⚠ next of …`: `a` in normal mode, `Alt-a` in search mode, selects the next
+such pane, opening the rows it is in. In the overview such a pane is framed in
+red, with `⚠ needs input` on its bottom border and `⚠` after its window's
+label; `a` there focuses the next window that needs input, then goes on to the
+next session that has one. Claude Code keeps each running session's status,
+and the tmux pane it runs in, in `~/.claude/sessions/PID.json`, and a
+background session's state in `~/.claude/jobs/ID/state.json`; the selector
+reads them every second, which costs a dozen small files, and works out the
+state as `claude agents` does (`CLAUDE_CONFIG_DIR` moves the directory).
+
 `Ctrl-Z` shows each pane's background processes under it, as a tree: jobs
 stopped with `Ctrl-Z`, or sent to the background with `bg` or `&`, marked
 `stopped` or `running`. `Enter` on one jumps to its pane (then `fg` brings it
@@ -159,7 +175,8 @@ remembered for the next run, as the preview is.
 and **normal mode** (as in vim), where keys are commands, as in tmux's own
 chooser: `j`/`k` move, `h`/`l` collapse/expand, `g`/`G` first/last, `0`–`9`
 and `M-a`…`M-z` jump to a labelled row, `t`/`T` tag, `x`/`X` kill, `:` runs a
-command, `m`/`M` mark, `O`/`r` sort, `H` back to the start pane, `n`/`N` next
+command, `m`/`M` mark, `O`/`r` sort, `H` back to the start pane, `a` the next Claude
+Code session that needs input, `n`/`N` next
 match, `v` preview, `/` back to search, `q` quit. Start in normal mode with
 `-normal`.
 
@@ -176,6 +193,7 @@ In search mode the same commands are on the letters with **Alt**:
 | `Alt-o` | sort by index (creation order), name, or time (most recent first) |
 | `Alt-r` | reverse the sort |
 | `Alt-h` | back to the pane you started from |
+| `Alt-a` | the next pane whose Claude Code session needs input (`a` in normal mode) |
 | `Alt-+` / `Alt--` | expand / collapse everything |
 
 Command-line flags:
@@ -227,7 +245,8 @@ its share back): grown far enough it takes
 the empty cell next to it and the windows after it move along, and in a full
 grid it widens its row and column instead (a window has one size in the grid
 or ring and another in the centre, both remembered between runs),
-`?` shows the overview's own help, `i` types into the window's active pane (**type mode**: the pane is framed in
+`?` shows the overview's own help, `a` focuses the next window whose Claude
+Code session needs input, `i` types into the window's active pane (**type mode**: the pane is framed in
 red and shows its cursor, and tmux's prefix then `Esc`, or `Ctrl-]`, stops;
 the prefix twice sends it), tmux's prefix then `,` renames the window in
 focus, as in tmux, `t` tags the window in focus (the list's tags: what is tagged in one is

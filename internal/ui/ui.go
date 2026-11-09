@@ -96,6 +96,7 @@ type model struct {
 	// Claude Code jobs, and proc is /proc, for the files of editors; ""
 	// turns either off.
 	claudeDir, proc string
+	claude          claudeState
 	// editorFiles caches what editorFilesOf found, until the next refresh.
 	editorFiles map[string]string
 	help        bool
@@ -249,6 +250,10 @@ func Run(o Options) (*tmux.Target, error) {
 		tick = ticker.C
 	}
 
+	// Claude Code's sessions are read again every second.
+	claudeTick := time.NewTicker(time.Second)
+	defer claudeTick.Stop()
+
 	defer m.stopControl()
 	// A frame is drawn after every key, and frameGap after panes print in
 	// the overview.
@@ -286,6 +291,8 @@ func Run(o Options) (*tmux.Target, error) {
 			}
 			m.screens = map[string]screen{}
 			m.editorFiles = nil
+		case <-claudeTick.C:
+			redraw = m.readClaude()
 		case <-news:
 			redraw = false
 			if m.takeNews() && frame == nil {
@@ -464,6 +471,7 @@ func (m *model) load() error {
 		sessions = squashGroups(sessions, here.Session)
 	}
 	m.roots, m.total = buildTree(sessions, here, m.home)
+	m.readClaude()
 	m.editorFiles = nil
 	// An editor's files are searchable, as a pane's title is.
 	walkTree(m.roots, func(n *node) {
@@ -827,6 +835,8 @@ func (m *model) normalKey(r rune) (done bool, target *tmux.Target, err error) {
 		m.winOffset++
 	case 'H':
 		return m.command('h')
+	case 'a':
+		return m.command('a')
 	case 't', 'T', 'x', 'X', ':', 'm', 'M', 'o', 'O', 'r':
 		return m.command(r)
 	default:
@@ -895,6 +905,8 @@ func (m *model) command(r rune) (done bool, target *tmux.Target, err error) {
 		}
 	}
 	switch r {
+	case 'a':
+		m.nextNeedsInput()
 	case 'o', 'O':
 		m.order = (m.order + 1) % len(SortOrders)
 		sortTree(m.roots, m.order, m.reverse)
@@ -1304,7 +1316,12 @@ func (m *model) render(width, height int) string {
 		// The help takes the keys: its own line replaces the list's hints.
 		drawLine(&b, height-1, width, styleDim, false, span{text: helpFoot})
 	} else {
-		drawLine(&b, height-1, width, "", false, hintSpans(foot, m.togglesOn())...)
+		key := "M-a"
+		if m.normal {
+			key = "a"
+		}
+		panes, _ := m.claudeNeeds(m.treeSessions())
+		drawLine(&b, height-1, width, "", false, append(needsHint(panes, key), hintSpans(foot, m.togglesOn())...)...)
 	}
 	if m.menu != nil {
 		m.menu.draw(&b, width, height)
@@ -1352,8 +1369,16 @@ func (m *model) drawPrompt(b *strings.Builder, width int) {
 	case query == "":
 		hint = span{text: "type to filter · Ctrl-/ for normal mode · ? for help", style: styleDim}
 	}
-	gap := max(2, width-textWidth(prompt.text)-textWidth(hint.text)-textWidth(right.text))
-	drawLine(b, 0, width, "", false, prompt, hint, span{text: strings.Repeat(" ", gap)}, right)
+	needs := needsSpans(m.claudeNeeds(m.treeSessions()))
+	if m.status != "" {
+		needs = nil // the message first
+	}
+	used := textWidth(prompt.text) + textWidth(hint.text) + textWidth(right.text)
+	for _, s := range needs {
+		used += textWidth(s.text)
+	}
+	gap := span{text: strings.Repeat(" ", max(2, width-used))}
+	drawLine(b, 0, width, "", false, append(append([]span{prompt, hint, gap}, needs...), right)...)
 }
 
 // drawPromptCursor is the 1-based column of the cursor on the prompt line.
@@ -1400,8 +1425,8 @@ func (m *model) rowContent(n *node) []span {
 		if n.session.Attached {
 			info += ", attached"
 		}
-		return []span{marker, {text: arrow}, {text: n.name, hl: hl(filter.Session, n.name)},
-			{text: info + ")", style: styleDim}}
+		return append([]span{marker, {text: arrow}, {text: n.name, hl: hl(filter.Session, n.name)},
+			{text: info + ")", style: styleDim}}, m.claudeSummary(n.session.Windows)...)
 	case windowRow:
 		idx := fmt.Sprint(n.window.Index)
 		s := []span{marker, {text: "  " + arrow}, {text: idx, hl: hl(filter.Index, idx)}, {text: ": "},
@@ -1409,9 +1434,13 @@ func (m *model) rowContent(n *node) []span {
 		s = append(s, flagSpans(n.window.Flags)...)
 		if n.pane == nil {
 			s = append(s, span{text: fmt.Sprintf("  (%d panes)", len(n.window.Panes)), style: styleDim})
+			s = append(s, m.claudeSummary([]*tmux.Window{n.window})...)
 		} else {
 			s = append(s, span{text: "  "}, span{text: n.command, hl: hl(filter.Command, n.command)},
 				span{text: "  "})
+			if b := claudeSpan(m.claudeOf(n.window, n.pane)); b.text != "" {
+				s = append(s, b, span{text: "  "})
+			}
 			s = append(s, m.titleSpans(n.pane)...)
 			s = append(s, span{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)})
 		}
@@ -1438,6 +1467,9 @@ func (m *model) rowContent(n *node) []span {
 		}
 		s := []span{marker, {text: "    " + arrow + id + " "},
 			{text: n.command, hl: hl(filter.Command, n.command)}, {text: pad + "  "}}
+		if b := claudeSpan(m.claudeOf(n.window, n.pane)); b.text != "" {
+			s = append(s, b, span{text: "  "})
+		}
 		s = append(s, m.titleSpans(n.pane)...)
 		return append(s, span{text: n.path, style: stylePath, hl: hl(filter.Path, n.path)})
 	}
@@ -1614,6 +1646,7 @@ var helpText = slices.Concat([]string{
 	"| Alt-m  Alt-M\tmark / unmark the pane",
 	"| Alt-o  Alt-r\tsort by index, name or time / reverse",
 	"| Alt-h\tback to the pane the selector started from",
+	"| Alt-a\tthe next pane whose Claude Code session needs input",
 	"| Alt-+  Alt--\texpand / collapse everything",
 	"| Ctrl-W  Ctrl-U\tdelete a word / clear the query",
 	"| ?  < >\thelp; scroll a session preview (empty query only)",
@@ -1630,12 +1663,21 @@ var helpText = slices.Concat([]string{
 	"| m M\tmark / unmark the pane",
 	"| O r\tsort by index, name or time / reverse",
 	"| H\tback to the pane the selector started from",
+	"| a\tthe next pane whose Claude Code session needs input",
 	"| n N\tnext / previous row matching the search",
 	"| v\tshow or hide the preview",
 	"| z\tshow or hide background processes (as Ctrl-Z)",
 	"| < >\tscroll a session preview",
 	"| / f\tback to search mode",
 	"| q\tquit",
+	"",
+	"# Claude Code sessions",
+	"A pane running Claude Code shows what it is doing, read every second:",
+	"⚠ needs input (a question, a permission, a decision), ● working or",
+	"○ idle; sessions and windows count what their panes need. The top line",
+	"counts the sessions that need input, background ones (claude agents)",
+	"too, and the bottom line then offers a / Alt-a to go to the next.",
+	"In the overview such a pane is framed in red, its window marked ⚠.",
 	"",
 }, overviewHelp, []string{
 	"",
@@ -1684,6 +1726,8 @@ var overviewHelp = []string{
 	"| :\trun a command on the tagged items, or the window",
 	"|\t(%% is each one)",
 	"| prefix ,\trename the window in focus, as in tmux",
+	"| a\tthe next window with a Claude Code session that needs",
+	"|\tinput: in this session, then in the others",
 	"",
 	"# Overview: type mode (i)",
 	"i sends what you type to the active pane of the window in focus, framed",

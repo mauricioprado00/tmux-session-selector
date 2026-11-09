@@ -122,6 +122,54 @@ gave wins. This is done only for background processes named `claude`, when
 they are shown. The title follows the command on the job's row, and
 `Ctrl-L` hides it with the others.
 
+#### Claude Code sessions
+
+Claude Code keeps a file per running process, `~/.claude/sessions/PID.json`
+(under `$CLAUDE_CONFIG_DIR` when set), with the session id, its name, its
+`status` (`busy`, `waiting`, `idle`) and, when it runs in tmux, `tmux`:
+`session:@window.%pane`. A background session, which Claude Code's daemon
+runs in no pane, also has `~/.claude/jobs/ID/state.json` (`ID` the first 8
+characters of the session id) with a `state` (`working`, `blocked`, `done`,
+`failed`, `stopped` …) and a `tempo` (`active`, `blocked`, `idle`), which
+`claude agents` sorts into Needs input, Working and Completed. Files of
+processes not in `/proc` are left out. A session's state is worked out as
+`claude agents` does, in this order:
+
+| Condition | State |
+|---|---|
+| status `busy` | working |
+| job `failed`, `stopped` or `crashed` | idle (done) |
+| status `waiting` | **needs input** |
+| job `done` | idle (done) |
+| job tempo or state `blocked` | **needs input** |
+| any other job | working |
+| status `idle` | idle |
+
+A session in a pane belongs to the pane with that id in the window with
+that id (a pane id alone could be another tmux server's). The files are read
+with the tree and again every second; the screen is drawn again only when a
+state changes.
+
+- A pane row (or a one-pane window row) shows the state after the command:
+  ` ⚠ needs input ` in bold red, reversed; `● working` in yellow; `○ idle`
+  dim.
+- Session rows and windows with several panes count what their panes need:
+  ` ⚠ 2 need input ` and `● 1 working`.
+- The prompt line, at the right, counts the sessions that need input:
+  ` ⚠ 2 need input + 1 in the background `, before the sort and counts so a
+  narrow screen keeps it; a message replaces it.
+- While any pane needs input the bottom line starts with
+  ` a ⚠ next of 2 need input ` (`M-a` in search mode).
+- `a` (normal mode) or `Alt-a` (search mode) selects the next pane, after
+  the selected row in tree order and around, that needs input, expanding the
+  rows above it. With none, the prompt line says so, naming the background
+  sessions that need input, if any.
+- In the overview (§6.9) a pane that needs input is framed in red (under the
+  focus and tag frames), each Claude Code pane has its state on its bottom
+  border, a window with such a pane has ` ⚠ ` after its label, and the top
+  line counts them: ` ⚠ 1 needs input here, 2 elsewhere, 1 in the
+  background `.
+
 #### Background processes
 
 `Ctrl-Z` (normal mode: `z`) shows, under each pane's row, that pane's
@@ -343,6 +391,7 @@ not followed by a known SS3 key is Alt-O.
 | `Alt-:` (or `Alt-;`) | `:` | Read a tmux command on the prompt line and run it on every tagged item (or the selected row if none), with `%%` and `%1` replaced by each target as in §8.1. `Esc` cancels. The tree is reloaded afterwards. |
 | `Alt-o` (or `Alt-O`) | `O` | Change the sort order: index → name → time (§5). |
 | `Alt-r` | `r` | Reverse the sort order. |
+| `Alt-a` | `a` | Select the next pane whose Claude Code session needs input (§5, Claude Code sessions). |
 | `Alt-h` (or `Alt-H`) | `H` | Select the pane the selector was started from, expanding its window, and clearing the query if it hides that pane. Does nothing outside tmux. |
 | `Alt-0` … `Alt-9` | `0` … `9` | Jump straight to the row with that label. Labels are a dim gutter on the left of the rows on screen, numbered from the top of the tree area (tmux numbers from the top of the whole list), so after filtering the first label is the first row shown. Search mode labels ten rows `M-0` … `M-9`; normal mode labels 36, `0` … `9` then `M-a` … `M-z`, as tmux does. |
 | `Alt-+` (or `Alt-=`) / `Alt--` | `M-+` / `M--` | Expand / collapse every session and window. The selection moves to the nearest visible ancestor if it is hidden. |
@@ -373,6 +422,7 @@ same byte as `Ctrl-_`).
 | `m` / `M` | mark / unmark the pane |
 | `O` (or `o`) / `r` | change sort order / reverse |
 | `H` | back to the starting pane |
+| `a` | the next pane whose Claude Code session needs input |
 | `n` / `N` | next / previous row matching the query, wrapping around |
 | `v` | show or hide the preview |
 | `z` | show or hide background processes |
@@ -447,6 +497,7 @@ knows, such as `purple`; attributes and their `no` forms) into SGR. With
 | `Ctrl-L` | show or hide Claude Code session titles, as in the list |
 | `?`, `F1`, click the footer | the overview's help: its keys, type mode, search, in place of the windows; it scrolls and closes as the list's (§6.2) |
 | `i` | type mode (below): type into the active pane of the window in focus |
+| `a` | focus the next window, after the one in focus, with a pane whose Claude Code session needs input (§5); with no other in this session, open the overview of the next session, in list order and around, that has one, centred on that window |
 | prefix `,` | rename the window in focus, as tmux's `prefix ,` does: the top line asks for the name, starting from the current one (`Enter` renames, `Esc` cancels, an empty name changes nothing). tmux does not see its prefix inside the popup, so the selector takes it: it is read from the `prefix` option with the pane list (`#{prefix}`), and the prefix then any other key does nothing, as an unbound key in tmux. In type mode it renames the window typed into, and typing goes on after |
 | `t` | tag or untag the window in focus, and move the focus to the next window, as `t` moves down the list. Tags are the list's: a window tagged here is tagged there, and the other way round. A tagged window has a magenta frame and `✓` before its label; the top line counts the tags |
 | `T` | untag everything |
@@ -849,6 +900,7 @@ internal/tmux/                      run tmux, parse list-panes output, build the
 internal/filter/                    query parsing and matching (pure, no I/O)
 internal/ui/                        terminal raw mode, input decoding, rendering
 internal/tmuxconf/                  --tmux-bind / --tmux-unbind: the config block and live binding
+internal/claude/                    Claude Code sessions' state: needs input, working, idle
 .github/workflows/ci.yml
 .github/workflows/release.yml
 README.md                           install, key binding, query syntax

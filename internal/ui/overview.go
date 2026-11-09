@@ -119,6 +119,8 @@ func (m *model) overviewKey(ev event) (done bool, target *tmux.Target, err error
 			m.askLiveWindow()
 		case ev.r == 'i':
 			m.startTyping()
+		case ev.r == 'a':
+			m.overviewNeedsInput()
 		case ev.r == '?':
 			m.help, m.helpTop = true, 0
 		case ev.r == 't' || ev.r == 'T' || ev.r == 'x' || ev.r == 'X' || ev.r == ':' || ev.r == ';':
@@ -677,6 +679,26 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		count = fmt.Sprintf("%d tagged  ", len(m.tags)) + count
 	}
 	right := span{text: count, style: styleDim}
+	// Who needs input: here, in other sessions, in the background.
+	var needs []span
+	here, _ := m.claudeCount(s.Windows)
+	all, background := m.claudeNeeds(m.treeSessions())
+	var parts []string
+	for _, p := range []struct {
+		n     int
+		where string
+	}{{here, "here"}, {all - here, "elsewhere"}, {background, "in the background"}} {
+		switch {
+		case p.n <= 0:
+		case len(parts) == 0:
+			parts = append(parts, needInput(p.n)+" "+p.where)
+		default:
+			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.where))
+		}
+	}
+	if len(parts) > 0 {
+		needs = []span{{text: " ⚠ " + strings.Join(parts, ", ") + " ", style: styleNeedsInput}, {text: "  "}}
+	}
 	if m.confirm != nil {
 		right = span{text: clean(m.confirm.question) + " (y/n)", style: styleConfirm}
 	}
@@ -701,12 +723,18 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 			left = append(left, span{text: fmt.Sprintf("  size %.3g×", size), style: styleDim})
 		}
 	}
-	used := 0
+	if right.style != styleDim {
+		needs = nil // a question or a message first
+	}
+	used, needW := 0, 0
 	for _, sp := range left {
 		used += textWidth(sp.text)
 	}
-	gap := span{text: strings.Repeat(" ", max(2, width-used-textWidth(right.text)))}
-	drawLine(b, 0, width, "", false, append(left, gap, right)...)
+	for _, sp := range needs {
+		needW += textWidth(sp.text)
+	}
+	gap := span{text: strings.Repeat(" ", max(2, width-used-needW-textWidth(right.text)))}
+	drawLine(b, 0, width, "", false, append(append(append(left, gap), needs...), right)...)
 	cursor := 0 // the column after the query or command being typed
 	if m.input != nil || ov.search != nil {
 		cursor = 1 + used
@@ -744,6 +772,7 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		if m.dirs {
 			m.drawDirs(c, w, box.x0, box.y0, box.x1, box.y1)
 		}
+		m.drawClaude(c, w, box, true)
 		// The label: a mark for the focus or a tag, then the window, in the
 		// colours of its tab in the status line when they stand out there.
 		mark, label, style := "", fmt.Sprintf(" %d: %s%s ", w.Index, clean(w.Name), clean(w.Flags)), styleLabel
@@ -766,6 +795,11 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 		c.text(box.x0+2, box.y0, box.x1-1, mark, style)
 		c.text(box.x0+2+textWidth(mark), box.y0, box.x1-1, label, labelStyle)
 		label = mark + label
+		if needs, _ := m.claudeCount([]*tmux.Window{w}); needs > 0 {
+			c.text(box.x0+2+textWidth(label), box.y0, box.x1-1, " ⚠ ", styleNeedsInput)
+			label += " ⚠ "
+		}
+		m.drawClaude(c, w, box, false)
 		if m.titles {
 			m.drawPaneTitles(c, w, box.x0, box.y0, box.x1, box.y1, box.x0+2+textWidth(label))
 		}
@@ -796,7 +830,12 @@ func (m *model) drawOverview(b *strings.Builder, width, height int) {
 	if ov.typing != nil {
 		drawLine(b, height-1, width, "", false, m.typingFooter()...)
 	} else {
-		drawLine(b, height-1, width, "", false, hintSpans(foot, m.togglesOn())...)
+		var hint []span
+		if ov.search == nil {
+			all, _ := m.claudeNeeds(m.treeSessions())
+			hint = needsHint(all, "a")
+		}
+		drawLine(b, height-1, width, "", false, append(hint, hintSpans(foot, m.togglesOn())...)...)
 	}
 	switch {
 	case cursor > 0:
