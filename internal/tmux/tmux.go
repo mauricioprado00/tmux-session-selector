@@ -138,9 +138,12 @@ func (t Tmux) RunLine(line string) error {
 	return err
 }
 
-// run runs tmux with input on its standard input.
+// run runs tmux with input on its standard input. -u says the client takes
+// UTF-8 whatever the locale: in one that is not UTF-8, tmux 3.6 turns the
+// control characters of the arguments, sep among them, and the bytes of
+// UTF-8 names into _.
 func (t Tmux) run(input string, args ...string) (string, error) {
-	cmd := exec.Command("tmux", append(append([]string{}, t.Args...), args...)...)
+	cmd := exec.Command("tmux", append(append([]string{"-u"}, t.Args...), args...)...)
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
 	}

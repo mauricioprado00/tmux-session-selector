@@ -124,6 +124,25 @@ func TestSessions(t *testing.T) {
 	}
 }
 
+// TestSessionsPOSIXLocale reads sessions with a locale that is not UTF-8,
+// in which tmux 3.6 turns the control characters of a command's arguments,
+// the field separator among them, into _ unless told the client is UTF-8.
+func TestSessionsPOSIXLocale(t *testing.T) {
+	for _, v := range []string{"LANG", "LC_CTYPE", "LANGUAGE"} {
+		t.Setenv(v, "")
+	}
+	t.Setenv("LC_ALL", "C")
+	tm := server(t)
+	mustRun(t, tm, "new-session", "-d", "-s", "wïn", "-n", "édit")
+	sessions, err := tm.Sessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Name != "wïn" || sessions[0].Windows[0].Name != "édit" {
+		t.Errorf("sessions = %+v", sessions[0])
+	}
+}
+
 func TestSwitch(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("attaching a test client needs util-linux script")
