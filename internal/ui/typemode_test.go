@@ -9,9 +9,9 @@ import (
 
 func TestTypeMode(t *testing.T) {
 	tm := tmuxServer(t)
-	pane := tmuxRun(t, tm, "new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "a", "-x", "80", "-y", "24", "cat -v")
+	pane := tmuxRun(t, tm, "new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "a", "-n", "cat", "-x", "80", "-y", "24", "cat -v")
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a")
-	time.Sleep(200 * time.Millisecond)
+	settleNames(t, tm, "a")
 	m := liveModel(t, tm)
 	m.selectRow(t, "a")
 	m.handle(event{key: keyOverview}) // focus on window 0, cat

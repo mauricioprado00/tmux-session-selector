@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -144,6 +145,19 @@ func typeText(m *model, s string) {
 	for _, r := range s {
 		m.handle(typed(r))
 	}
+}
+
+// settleNames waits until the windows of session that tmux names itself
+// have their program's name: a new window is first named after the forked
+// tmux, and tmux 3.6 renames it only a moment later.
+func settleNames(t *testing.T, tm tmux.Tmux, session string) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if !slices.Contains(strings.Fields(windowNames(t, tm, session)), "tmux") {
+			return
+		}
+	}
+	t.Fatalf("windows still named tmux: %s", windowNames(t, tm, session))
 }
 
 func windowNames(t *testing.T, tm tmux.Tmux, session string) string {
@@ -348,6 +362,7 @@ func TestLiveWindowRoundTrip(t *testing.T) {
 	tmuxRun(t, tm, "split-window", "-v", "-d", "-t", "a:w1.1") // three panes, to test their order
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a", "-n", "w2")
 	tmuxRun(t, tm, "new-window", "-d", "-t", "a") // named automatically
+	settleNames(t, tm, "a")
 	before := tmuxRun(t, tm, "list-windows", "-t", "a", "-F", "#{window_index} #{window_name} #{window_panes} #{window_layout}")
 
 	m := liveModel(t, tm)
