@@ -33,7 +33,7 @@ func TestClaudeState(t *testing.T) {
 	other := &tmux.Session{ID: "$2", Name: "other", Windows: []*tmux.Window{
 		{ID: "@9", Index: 0, Name: "o", Width: 80, Height: 24, Panes: []*tmux.Pane{{ID: "%9", Width: 80, Height: 24}}}}}
 	roots, total := buildTree([]*tmux.Session{work, other}, tmux.Location{}, "")
-	m := &model{roots: roots, total: total, claudeDir: dir, normal: true, screens: map[string]screen{}}
+	m := &model{roots: roots, total: total, claudeDirs: []string{dir}, normal: true, screens: map[string]screen{}}
 	m.setQuery()
 	if !m.readClaude() || m.readClaude() {
 		t.Error("readClaude should report a change only the first time")

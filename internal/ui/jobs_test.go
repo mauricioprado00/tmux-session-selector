@@ -284,12 +284,12 @@ func TestStoppedClaudeJobTitle(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "projects", "-src", "s1.jsonl"),
 		`{"type":"ai-title","aiTitle":"Fix the login form","sessionId":"s1"}`+"\n")
 	roots, _ := jobsTree()
-	m := &model{roots: roots, titles: true, claudeDir: dir}
+	m := &model{roots: roots, titles: true, claudeDirs: []string{dir}}
 	m.setQuery()
 	found := map[int][]*jobs.Job{20: {{PID: 201, Stopped: true, Args: "claude --resume s1"}, {PID: 202, Args: "make"}}}
 	attachJobs(roots, found, func(j *jobs.Job) string {
 		if isClaude(j.Args) {
-			return "✳ " + procinfo.ClaudeTitle(m.claudeDir, j.PID)
+			return "✳ " + procinfo.ClaudeTitle(m.claudeDirs[0], j.PID)
 		}
 		return ""
 	})

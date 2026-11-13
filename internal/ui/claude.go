@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mauricioprado00/tmux-session-selector/internal/claude"
 	"github.com/mauricioprado00/tmux-session-selector/internal/tmux"
@@ -16,6 +17,10 @@ import (
 // in no pane) included, and the bottom line then offers a (Alt-a while
 // searching), which goes to the next pane that needs input. The state is
 // read again every second.
+
+// claudeScanEvery is how often the running claude processes are looked at
+// again for the directories they keep their sessions in.
+const claudeScanEvery = 5 * time.Second
 
 const (
 	styleNeedsInput      = "1;7;31"
@@ -35,7 +40,10 @@ type claudeState struct {
 // readClaude reads the sessions' state again, and returns whether anything
 // shown has changed.
 func (m *model) readClaude() bool {
-	sessions := claude.Read(m.claudeDir, m.proc)
+	if m.proc != "" && time.Since(m.claudeScanned) >= claudeScanEvery {
+		m.claudeDirs, m.claudeScanned = claude.Dirs(m.proc, m.claudeBase...), time.Now()
+	}
+	sessions := claude.ReadAll(m.claudeDirs, m.proc)
 	cs := claudeState{panes: map[string]claude.Session{}}
 	var key strings.Builder
 	for _, s := range sessions {

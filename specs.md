@@ -111,8 +111,8 @@ The files are searchable, as a title is, in the list and in the overview.
 
 A background Claude Code process (§5, background processes) has no pane
 title of its own, so its session title is read from Claude Code's files:
-`~/.claude/sessions/PID.json` (or under `$CLAUDE_CONFIG_DIR`) names the
-session and its directory, and the session's transcript,
+`~/.claude/sessions/PID.json` (or under any of Claude Code's directories, as
+below) names the session and its directory, and the session's transcript,
 `~/.claude/projects/DIR/SESSION.jsonl` (the directory with each character
 other than a letter or digit made `-`), records each title as an `ai-title`
 line, or a `custom-title` line for one the user gave. The latest is near
@@ -132,7 +132,12 @@ runs in no pane, also has `~/.claude/jobs/ID/state.json` (`ID` the first 8
 characters of the session id) with a `state` (`working`, `blocked`, `done`,
 `failed`, `stopped` …) and a `tempo` (`active`, `blocked`, `idle`), which
 `claude agents` sorts into Needs input, Working and Completed. Files of
-processes not in `/proc` are left out. A session's state is worked out as
+processes not in `/proc` are left out. Claude Code's directories are
+`$CLAUDE_CONFIG_DIR` of the selector, if set, `~/.claude`, and the
+`CLAUDE_CONFIG_DIR` (read from `/proc/PID/environ`) of every running process
+named `claude`, so that a session started by a wrapper script that gives it a
+profile of its own is seen; the processes are looked at again every 5 s, and
+the sessions of all the directories are read together. A session's state is worked out as
 `claude agents` does, in this order:
 
 | Condition | State |

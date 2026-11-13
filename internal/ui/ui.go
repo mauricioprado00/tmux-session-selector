@@ -92,11 +92,16 @@ type model struct {
 	// dirs shows each pane's working directory in the overview; d switches
 	// it, and it is remembered.
 	dirs bool
-	// claudeDir is Claude Code's directory, for the titles of stopped
-	// Claude Code jobs, and proc is /proc, for the files of editors; ""
-	// turns either off.
-	claudeDir, proc string
-	claude          claudeState
+	// claudeDirs are Claude Code's directories, for the state of its
+	// sessions and the titles of stopped Claude Code jobs: $CLAUDE_CONFIG_DIR
+	// or ~/.claude (claudeBase), and the CLAUDE_CONFIG_DIR of any running
+	// claude, looked for again every claudeScanEvery (claudeScanned). proc
+	// is /proc, for the files of editors and to find those directories; ""
+	// turns it off.
+	claudeDirs, claudeBase []string
+	claudeScanned          time.Time
+	proc                   string
+	claude                 claudeState
 	// editorFiles caches what editorFilesOf found, until the next refresh.
 	editorFiles map[string]string
 	help        bool
@@ -178,9 +183,12 @@ func Run(o Options) (*tmux.Target, error) {
 		refreshEvery: o.Refresh,
 		template:     o.Command, allGroups: o.AllGroups, normal: o.Normal, stateFile: o.StateFile,
 		titles: state["claude-titles"] != "off", sizes: readSizes(state), jobs: state["background-jobs"] == "on",
-		dirs: state["overview-dirs"] == "on", proc: "/proc", claudeDir: os.Getenv("CLAUDE_CONFIG_DIR")}
-	if m.claudeDir == "" && home != "" {
-		m.claudeDir = filepath.Join(home, ".claude")
+		dirs: state["overview-dirs"] == "on", proc: "/proc"}
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		m.claudeBase = append(m.claudeBase, d)
+	}
+	if home != "" {
+		m.claudeBase = append(m.claudeBase, filepath.Join(home, ".claude"))
 	}
 	if o.Regex {
 		m.mode = filter.Regex
@@ -542,8 +550,10 @@ func (m *model) addJobs() {
 		if !isClaude(j.Args) {
 			return ""
 		}
-		if t := procinfo.ClaudeTitle(m.claudeDir, j.PID); t != "" {
-			return "✳ " + t
+		for _, d := range m.claudeDirs {
+			if t := procinfo.ClaudeTitle(d, j.PID); t != "" {
+				return "✳ " + t
+			}
 		}
 		return ""
 	})

@@ -144,7 +144,11 @@ and the tmux pane it runs in, in `~/.claude/sessions/PID.json`, and a
 background session's state in `~/.claude/jobs/ID/state.json` (a pane that
 parked its conversation in the background shows that job's state); the selector
 reads them every second, which costs a dozen small files, and works out the
-state as `claude agents` does (`CLAUDE_CONFIG_DIR` moves the directory).
+state as `claude agents` does. `CLAUDE_CONFIG_DIR` moves the directory; the
+selector reads `~/.claude` (or its own `$CLAUDE_CONFIG_DIR`) and also the
+`CLAUDE_CONFIG_DIR` of every running `claude`, so sessions started by a
+wrapper script with a profile of their own (`CLAUDE_CONFIG_DIR=~/.claude-work
+claude "$@"`) are seen too.
 
 `Ctrl-Z` shows each pane's background processes under it, as a tree: jobs
 stopped with `Ctrl-Z`, or sent to the background with `bg` or `&`, marked

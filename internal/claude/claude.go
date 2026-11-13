@@ -213,3 +213,61 @@ func parseTmux(s string) (session, window, pane string) {
 	}
 	return session, window, "%" + pane
 }
+
+// Dirs is Claude Code's directories: those in base, then the
+// CLAUDE_CONFIG_DIR of every running claude process found under proc (as a
+// wrapper script such as `CLAUDE_CONFIG_DIR=~/.claude-x claude` sets), each
+// once and only if it exists. proc "" looks at no process.
+func Dirs(proc string, base ...string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(d string) {
+		if d == "" {
+			return
+		}
+		d = filepath.Clean(d)
+		if seen[d] {
+			return
+		}
+		seen[d] = true
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			out = append(out, d)
+		}
+	}
+	for _, d := range base {
+		add(d)
+	}
+	if proc == "" {
+		return out
+	}
+	entries, _ := os.ReadDir(proc)
+	for _, e := range entries {
+		if _, err := strconv.Atoi(e.Name()); err != nil {
+			continue
+		}
+		comm, err := os.ReadFile(filepath.Join(proc, e.Name(), "comm"))
+		if err != nil || strings.TrimSpace(string(comm)) != "claude" {
+			continue
+		}
+		env, err := os.ReadFile(filepath.Join(proc, e.Name(), "environ"))
+		if err != nil {
+			continue
+		}
+		for _, kv := range strings.Split(string(env), "\x00") {
+			if v, ok := strings.CutPrefix(kv, "CLAUDE_CONFIG_DIR="); ok {
+				add(v)
+			}
+		}
+	}
+	return out
+}
+
+// ReadAll is Read over every directory in dirs, sorted by process id.
+func ReadAll(dirs []string, proc string) []Session {
+	var out []Session
+	for _, d := range dirs {
+		out = append(out, Read(d, proc)...)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].PID < out[j].PID })
+	return out
+}
